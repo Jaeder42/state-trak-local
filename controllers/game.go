@@ -1,7 +1,6 @@
-package main
+package controllers
 
 import (
-	"encoding/json"
 	"log"
 	"os"
 	"time"
@@ -11,6 +10,7 @@ import (
 	"github.com/markus-wa/demoinfocs-golang/v3/pkg/demoinfocs/common"
 	"github.com/markus-wa/demoinfocs-golang/v3/pkg/demoinfocs/events"
 	"golang.org/x/exp/slices"
+	"jaeder42.tech/state-trak-local/graph/model"
 )
 
 type PlayerState struct {
@@ -46,7 +46,7 @@ type Game struct {
 	FrameRate      int          `json:"frameRate"`
 }
 
-func getGame() {
+func GetGame() model.Game {
 	f, err := os.Open("./test.dem")
 	if err != nil {
 		log.Panic("failed to open demo file: ", err)
@@ -155,12 +155,16 @@ func getGame() {
 		GameStartFrame: gameStartFrame,
 		FrameRate:      frameRate,
 	}
+	var gameModel = model.Game{
+		Map:       &game.Map,
+		FrameRate: &game.FrameRate,
+	}
+	// jsonObj, err := json.Marshal(game)
 
-	jsonObj, err := json.Marshal(game)
-
-	err = os.WriteFile("./output.json", jsonObj, 0644)
-	// fmt.Println(string(b))
+	// err = os.WriteFile("./output.json", jsonObj, 0644)
+	// // fmt.Println(string(b))
 	if err != nil {
 		log.Panic("failed to parse demo: ", err)
 	}
+	return gameModel
 }
