@@ -4,10 +4,13 @@ import (
 	"encoding/json"
 	"log"
 	"os"
+	"time"
 
 	"github.com/golang/geo/r3"
 	dem "github.com/markus-wa/demoinfocs-golang/v3/pkg/demoinfocs"
+	"github.com/markus-wa/demoinfocs-golang/v3/pkg/demoinfocs/common"
 	"github.com/markus-wa/demoinfocs-golang/v3/pkg/demoinfocs/events"
+	"golang.org/x/exp/slices"
 )
 
 type PlayerState struct {
@@ -19,14 +22,31 @@ type PlayerState struct {
 	Mvps        int       `json:"mvps"`
 	Position    r3.Vector `json:"position"`
 	EyePosition r3.Vector `json:"eyePosition"`
+	Team        string    `json:"team"`
+	Firing      bool      `json:"firing"`
+	Alive       bool      `json:"alive"`
 }
 
 type FrameState struct {
 	Frame        int           `json:"frame"`
+	Time         time.Duration `json:"time"`
 	PlayerStates []PlayerState `json:"playerState"`
 }
 
-func main() {
+type Player struct {
+	Name    string `json:"name"`
+	SteamId uint64 `json:"steamId"`
+}
+
+type Game struct {
+	Players        []Player     `json:"players"`
+	Map            string       `json:"map"`
+	Frames         []FrameState `json:"frames"`
+	GameStartFrame int          `json:"gameStartFrame"`
+	FrameRate      int          `json:"frameRate"`
+}
+
+func getGame() {
 	f, err := os.Open("./test.dem")
 	if err != nil {
 		log.Panic("failed to open demo file: ", err)
@@ -36,13 +56,31 @@ func main() {
 	p := dem.NewParser(f)
 	defer p.Close()
 	var frames []FrameState
+	var players []Player
+	var gameStartFrame int
 
+	var firing []uint64
 	p.RegisterEventHandler(func(e events.FrameDone) {
 
 		// TODO get state for all players at any frame
 		var participants = p.GameState().Participants().Playing()
 		var playerStates []PlayerState
 		for _, element := range participants {
+			var team = "T"
+			var firingNow = false
+			idx := slices.IndexFunc(p.GameState().TeamCounterTerrorists().Members(), func(c *common.Player) bool {
+				return c.SteamID64 == element.SteamID64
+			})
+			if idx > -1 {
+				team = "CT"
+			}
+			idx = slices.IndexFunc(firing, func(player uint64) bool {
+				return player == element.SteamID64
+			})
+			if idx > -1 {
+				firingNow = true
+			}
+
 			playerStates = append(playerStates,
 				PlayerState{
 					Name:        element.Name,
@@ -53,13 +91,28 @@ func main() {
 					SteamId:     element.SteamID64,
 					Position:    element.Position(),
 					EyePosition: element.PositionEyes(),
+					Team:        team,
+					Firing:      firingNow,
+					Alive:       element.IsAlive(),
 				})
 		}
 
-		frames = append(frames, FrameState{Frame: p.CurrentFrame(), PlayerStates: playerStates})
+		frames = append(frames, FrameState{
+			Frame:        p.CurrentFrame(),
+			Time:         p.CurrentTime(),
+			PlayerStates: playerStates})
+		firing = nil
 
 	})
-
+	p.RegisterEventHandler(func(e events.AnnouncementMatchStarted) {
+		gameStartFrame = p.CurrentFrame()
+	})
+	p.RegisterEventHandler(func(e events.PlayerConnect) {
+		players = append(players, Player{
+			Name:    e.Player.Name,
+			SteamId: e.Player.SteamID64,
+		})
+	})
 	// p.RegisterEventHandler(func(e events.MatchStart) {
 	// 	fmt.Println("Game started --------------------------------------------------")
 	// })
@@ -68,7 +121,9 @@ func main() {
 	// 	fmt.Println("New round ------------------------------------------------------ ")
 	// })
 	// p.RegisterEventHandler(func(e events.RoundEnd) {
-
+	p.RegisterEventHandler(func(e events.WeaponFire) {
+		firing = append(firing, e.Shooter.SteamID64)
+	})
 	// 	fmt.Printf("Round over %s \n", e.Message)
 
 	// })
@@ -88,13 +143,23 @@ func main() {
 	// 	}
 	// 	fmt.Printf("%s <%v%s%s> %s\n", e.Killer, e.Weapon, hs, wallBang, e.Victim)
 	// })
-
 	// Parse to end
 	err = p.ParseToEnd()
-	b, err := json.Marshal(frames)
-	err = os.WriteFile("./output.json", b, 0644)
+
+	var frameRate int = int(p.Header().PlaybackFrames / int(p.Header().PlaybackTime.Seconds()))
+
+	var game = Game{
+		Players:        players,
+		Map:            p.Header().MapName,
+		Frames:         frames,
+		GameStartFrame: gameStartFrame,
+		FrameRate:      frameRate,
+	}
+
+	jsonObj, err := json.Marshal(game)
+
+	err = os.WriteFile("./output.json", jsonObj, 0644)
 	// fmt.Println(string(b))
-	// fmt.Println(frames[10000])
 	if err != nil {
 		log.Panic("failed to parse demo: ", err)
 	}
