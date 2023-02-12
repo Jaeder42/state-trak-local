@@ -7,4 +7,10 @@ type Query {
 type Game {
   map: String
   frameRate: Int
+  players: [Player]
+}
+
+type Player {
+  name: String
+  steamId: String
 }

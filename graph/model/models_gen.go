@@ -3,6 +3,12 @@
 package model
 
 type Game struct {
-	Map       *string `json:"map"`
-	FrameRate *int    `json:"frameRate"`
+	Map       *string   `json:"map"`
+	FrameRate *int      `json:"frameRate"`
+	Players   []*Player `json:"players"`
+}
+
+type Player struct {
+	Name    *string `json:"name"`
+	SteamID *string `json:"steamId"`
 }

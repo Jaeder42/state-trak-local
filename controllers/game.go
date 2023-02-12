@@ -3,6 +3,7 @@ package controllers
 import (
 	"log"
 	"os"
+	"strconv"
 	"time"
 
 	"github.com/golang/geo/r3"
@@ -33,17 +34,12 @@ type FrameState struct {
 	PlayerStates []PlayerState `json:"playerState"`
 }
 
-type Player struct {
-	Name    string `json:"name"`
-	SteamId uint64 `json:"steamId"`
-}
-
 type Game struct {
-	Players        []Player     `json:"players"`
-	Map            string       `json:"map"`
-	Frames         []FrameState `json:"frames"`
-	GameStartFrame int          `json:"gameStartFrame"`
-	FrameRate      int          `json:"frameRate"`
+	Players        []*model.Player `json:"players"`
+	Map            string          `json:"map"`
+	Frames         []FrameState    `json:"frames"`
+	GameStartFrame int             `json:"gameStartFrame"`
+	FrameRate      int             `json:"frameRate"`
 }
 
 func GetGame() model.Game {
@@ -56,7 +52,7 @@ func GetGame() model.Game {
 	p := dem.NewParser(f)
 	defer p.Close()
 	var frames []FrameState
-	var players []Player
+	var players []*model.Player
 	var gameStartFrame int
 
 	var firing []uint64
@@ -108,9 +104,10 @@ func GetGame() model.Game {
 		gameStartFrame = p.CurrentFrame()
 	})
 	p.RegisterEventHandler(func(e events.PlayerConnect) {
-		players = append(players, Player{
-			Name:    e.Player.Name,
-			SteamId: e.Player.SteamID64,
+		var steamId = strconv.FormatUint(e.Player.SteamID64, 10)
+		players = append(players, &model.Player{
+			Name:    &e.Player.Name,
+			SteamID: &steamId,
 		})
 	})
 	// p.RegisterEventHandler(func(e events.MatchStart) {
@@ -158,6 +155,7 @@ func GetGame() model.Game {
 	var gameModel = model.Game{
 		Map:       &game.Map,
 		FrameRate: &game.FrameRate,
+		Players:   game.Players,
 	}
 	// jsonObj, err := json.Marshal(game)
 
