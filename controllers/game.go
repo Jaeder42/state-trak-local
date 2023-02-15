@@ -4,7 +4,6 @@ import (
 	"log"
 	"os"
 	"strconv"
-	"time"
 
 	"github.com/golang/geo/r3"
 	dem "github.com/markus-wa/demoinfocs-golang/v3/pkg/demoinfocs"
@@ -30,16 +29,16 @@ type PlayerState struct {
 
 type FrameState struct {
 	Frame        int           `json:"frame"`
-	Time         time.Duration `json:"time"`
+	Time         float64       `json:"time"`
 	PlayerStates []PlayerState `json:"playerState"`
 }
 
 type Game struct {
-	Players        []*model.Player `json:"players"`
-	Map            string          `json:"map"`
-	Frames         []FrameState    `json:"frames"`
-	GameStartFrame int             `json:"gameStartFrame"`
-	FrameRate      int             `json:"frameRate"`
+	Players        []*model.Player     `json:"players"`
+	Map            string              `json:"map"`
+	Frames         []*model.FrameState `json:"frames"`
+	GameStartFrame int                 `json:"gameStartFrame"`
+	FrameRate      int                 `json:"frameRate"`
 }
 
 func GetGame() model.Game {
@@ -51,7 +50,7 @@ func GetGame() model.Game {
 
 	p := dem.NewParser(f)
 	defer p.Close()
-	var frames []FrameState
+	var frames []*model.FrameState
 	var players []*model.Player
 	var gameStartFrame int
 
@@ -60,7 +59,7 @@ func GetGame() model.Game {
 
 		// TODO get state for all players at any frame
 		var participants = p.GameState().Participants().Playing()
-		var playerStates []PlayerState
+		var playerStates []*model.PlayerState
 		for _, element := range participants {
 			var team = "T"
 			var firingNow = false
@@ -76,27 +75,42 @@ func GetGame() model.Game {
 			if idx > -1 {
 				firingNow = true
 			}
+			var name = element.Name
+			var kills = element.Kills()
+			var deaths = element.Deaths()
+			var assists = element.Assists()
+			var mvps = element.MVPs()
+			var steamId = strconv.FormatUint(element.SteamID64, 10)
+			var alive = element.IsAlive() && element.Health() > 0
+
+			var elementPosition = element.Position()
+			var position = model.Vector{
+				X: &elementPosition.X,
+				Y: &elementPosition.Y,
+			}
 
 			playerStates = append(playerStates,
-				PlayerState{
-					Name:        element.Name,
-					Kills:       element.Kills(),
-					Deaths:      element.Deaths(),
-					Assists:     element.Assists(),
-					Mvps:        element.MVPs(),
-					SteamId:     element.SteamID64,
-					Position:    element.Position(),
-					EyePosition: element.PositionEyes(),
-					Team:        team,
-					Firing:      firingNow,
-					Alive:       element.IsAlive(),
+				&model.PlayerState{
+					Name:     &name,
+					Kills:    &kills,
+					Deaths:   &deaths,
+					Assists:  &assists,
+					Mvps:     &mvps,
+					SteamID:  &steamId,
+					Position: &position,
+					// EyePosition: element.PositionEyes(),
+					Team:   &team,
+					Firing: &firingNow,
+					Alive:  &alive,
 				})
 		}
-
-		frames = append(frames, FrameState{
-			Frame:        p.CurrentFrame(),
-			Time:         p.CurrentTime(),
-			PlayerStates: playerStates})
+		var currentFrame = p.CurrentFrame()
+		var currentTime = p.CurrentTime().Seconds()
+		frames = append(frames, &model.FrameState{
+			Frame:        &currentFrame,
+			Time:         &currentTime,
+			PlayerStates: playerStates,
+		})
 		firing = nil
 
 	})
@@ -155,6 +169,7 @@ func GetGame() model.Game {
 	var gameModel = model.Game{
 		Map:       &game.Map,
 		FrameRate: &game.FrameRate,
+		Frames:    game.Frames,
 		Players:   game.Players,
 	}
 	// jsonObj, err := json.Marshal(game)

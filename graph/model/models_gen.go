@@ -2,13 +2,39 @@
 
 package model
 
+type FrameState struct {
+	Frame        *int           `json:"frame"`
+	Time         *float64       `json:"time"`
+	PlayerStates []*PlayerState `json:"playerStates"`
+}
+
 type Game struct {
-	Map       *string   `json:"map"`
-	FrameRate *int      `json:"frameRate"`
-	Players   []*Player `json:"players"`
+	Map       *string       `json:"map"`
+	FrameRate *int          `json:"frameRate"`
+	Players   []*Player     `json:"players"`
+	Frames    []*FrameState `json:"frames"`
 }
 
 type Player struct {
 	Name    *string `json:"name"`
 	SteamID *string `json:"steamId"`
+}
+
+type PlayerState struct {
+	Name        *string `json:"name"`
+	SteamID     *string `json:"steamId"`
+	Kills       *int    `json:"kills"`
+	Deaths      *int    `json:"deaths"`
+	Assists     *int    `json:"assists"`
+	Mvps        *int    `json:"mvps"`
+	Team        *string `json:"team"`
+	Firing      *bool   `json:"firing"`
+	Alive       *bool   `json:"alive"`
+	Position    *Vector `json:"position"`
+	EyePosition *Vector `json:"eyePosition"`
+}
+
+type Vector struct {
+	X *float64 `json:"x"`
+	Y *float64 `json:"y"`
 }
