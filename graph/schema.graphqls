@@ -1,5 +1,5 @@
 type Query {
-  game: Game
+  game(start: Int, limit: Int): Game
 }
 
 # type Mutation {}
@@ -8,6 +8,12 @@ type Game {
   map: String
   frameRate: Int
   players: [Player]
+  frames: [FrameState]
+  rounds: [Round]
+}
+
+type Round {
+  round: Int
   frames: [FrameState]
 }
 
@@ -20,6 +26,8 @@ type FrameState {
   frame: Int
   time: Float
   playerStates: [PlayerState]
+  phase: String
+  round: Int
 }
 
 type PlayerState {

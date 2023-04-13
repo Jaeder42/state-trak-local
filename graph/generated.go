@@ -45,7 +45,9 @@ type DirectiveRoot struct {
 type ComplexityRoot struct {
 	FrameState struct {
 		Frame        func(childComplexity int) int
+		Phase        func(childComplexity int) int
 		PlayerStates func(childComplexity int) int
+		Round        func(childComplexity int) int
 		Time         func(childComplexity int) int
 	}
 
@@ -54,6 +56,7 @@ type ComplexityRoot struct {
 		Frames    func(childComplexity int) int
 		Map       func(childComplexity int) int
 		Players   func(childComplexity int) int
+		Rounds    func(childComplexity int) int
 	}
 
 	Player struct {
@@ -76,7 +79,12 @@ type ComplexityRoot struct {
 	}
 
 	Query struct {
-		Game func(childComplexity int) int
+		Game func(childComplexity int, start *int, limit *int) int
+	}
+
+	Round struct {
+		Frames func(childComplexity int) int
+		Round  func(childComplexity int) int
 	}
 
 	Vector struct {
@@ -86,7 +94,7 @@ type ComplexityRoot struct {
 }
 
 type QueryResolver interface {
-	Game(ctx context.Context) (*model.Game, error)
+	Game(ctx context.Context, start *int, limit *int) (*model.Game, error)
 }
 
 type executableSchema struct {
@@ -111,12 +119,26 @@ func (e *executableSchema) Complexity(typeName, field string, childComplexity in
 
 		return e.complexity.FrameState.Frame(childComplexity), true
 
+	case "FrameState.phase":
+		if e.complexity.FrameState.Phase == nil {
+			break
+		}
+
+		return e.complexity.FrameState.Phase(childComplexity), true
+
 	case "FrameState.playerStates":
 		if e.complexity.FrameState.PlayerStates == nil {
 			break
 		}
 
 		return e.complexity.FrameState.PlayerStates(childComplexity), true
+
+	case "FrameState.round":
+		if e.complexity.FrameState.Round == nil {
+			break
+		}
+
+		return e.complexity.FrameState.Round(childComplexity), true
 
 	case "FrameState.time":
 		if e.complexity.FrameState.Time == nil {
@@ -152,6 +174,13 @@ func (e *executableSchema) Complexity(typeName, field string, childComplexity in
 		}
 
 		return e.complexity.Game.Players(childComplexity), true
+
+	case "Game.rounds":
+		if e.complexity.Game.Rounds == nil {
+			break
+		}
+
+		return e.complexity.Game.Rounds(childComplexity), true
 
 	case "Player.name":
 		if e.complexity.Player.Name == nil {
@@ -249,7 +278,26 @@ func (e *executableSchema) Complexity(typeName, field string, childComplexity in
 			break
 		}
 
-		return e.complexity.Query.Game(childComplexity), true
+		args, err := ec.field_Query_game_args(context.TODO(), rawArgs)
+		if err != nil {
+			return 0, false
+		}
+
+		return e.complexity.Query.Game(childComplexity, args["start"].(*int), args["limit"].(*int)), true
+
+	case "Round.frames":
+		if e.complexity.Round.Frames == nil {
+			break
+		}
+
+		return e.complexity.Round.Frames(childComplexity), true
+
+	case "Round.round":
+		if e.complexity.Round.Round == nil {
+			break
+		}
+
+		return e.complexity.Round.Round(childComplexity), true
 
 	case "Vector.x":
 		if e.complexity.Vector.X == nil {
@@ -348,6 +396,30 @@ func (ec *executionContext) field_Query___type_args(ctx context.Context, rawArgs
 		}
 	}
 	args["name"] = arg0
+	return args, nil
+}
+
+func (ec *executionContext) field_Query_game_args(ctx context.Context, rawArgs map[string]interface{}) (map[string]interface{}, error) {
+	var err error
+	args := map[string]interface{}{}
+	var arg0 *int
+	if tmp, ok := rawArgs["start"]; ok {
+		ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("start"))
+		arg0, err = ec.unmarshalOInt2ᚖint(ctx, tmp)
+		if err != nil {
+			return nil, err
+		}
+	}
+	args["start"] = arg0
+	var arg1 *int
+	if tmp, ok := rawArgs["limit"]; ok {
+		ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("limit"))
+		arg1, err = ec.unmarshalOInt2ᚖint(ctx, tmp)
+		if err != nil {
+			return nil, err
+		}
+	}
+	args["limit"] = arg1
 	return args, nil
 }
 
@@ -536,6 +608,88 @@ func (ec *executionContext) fieldContext_FrameState_playerStates(ctx context.Con
 	return fc, nil
 }
 
+func (ec *executionContext) _FrameState_phase(ctx context.Context, field graphql.CollectedField, obj *model.FrameState) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_FrameState_phase(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (interface{}, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.Phase, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		return graphql.Null
+	}
+	res := resTmp.(*string)
+	fc.Result = res
+	return ec.marshalOString2ᚖstring(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_FrameState_phase(ctx context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "FrameState",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type String does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _FrameState_round(ctx context.Context, field graphql.CollectedField, obj *model.FrameState) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_FrameState_round(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (interface{}, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.Round, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		return graphql.Null
+	}
+	res := resTmp.(*int)
+	fc.Result = res
+	return ec.marshalOInt2ᚖint(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_FrameState_round(ctx context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "FrameState",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Int does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
 func (ec *executionContext) _Game_map(ctx context.Context, field graphql.CollectedField, obj *model.Game) (ret graphql.Marshaler) {
 	fc, err := ec.fieldContext_Game_map(ctx, field)
 	if err != nil {
@@ -707,8 +861,59 @@ func (ec *executionContext) fieldContext_Game_frames(ctx context.Context, field 
 				return ec.fieldContext_FrameState_time(ctx, field)
 			case "playerStates":
 				return ec.fieldContext_FrameState_playerStates(ctx, field)
+			case "phase":
+				return ec.fieldContext_FrameState_phase(ctx, field)
+			case "round":
+				return ec.fieldContext_FrameState_round(ctx, field)
 			}
 			return nil, fmt.Errorf("no field named %q was found under type FrameState", field.Name)
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _Game_rounds(ctx context.Context, field graphql.CollectedField, obj *model.Game) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_Game_rounds(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (interface{}, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.Rounds, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		return graphql.Null
+	}
+	res := resTmp.([]*model.Round)
+	fc.Result = res
+	return ec.marshalORound2ᚕᚖjaeder42ᚗtechᚋstateᚑtrakᚑlocalᚋgraphᚋmodelᚐRound(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_Game_rounds(ctx context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Game",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			switch field.Name {
+			case "round":
+				return ec.fieldContext_Round_round(ctx, field)
+			case "frames":
+				return ec.fieldContext_Round_frames(ctx, field)
+			}
+			return nil, fmt.Errorf("no field named %q was found under type Round", field.Name)
 		},
 	}
 	return fc, nil
@@ -1273,7 +1478,7 @@ func (ec *executionContext) _Query_game(ctx context.Context, field graphql.Colle
 	}()
 	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (interface{}, error) {
 		ctx = rctx // use context from middleware stack in children
-		return ec.resolvers.Query().Game(rctx)
+		return ec.resolvers.Query().Game(rctx, fc.Args["start"].(*int), fc.Args["limit"].(*int))
 	})
 	if err != nil {
 		ec.Error(ctx, err)
@@ -1302,9 +1507,22 @@ func (ec *executionContext) fieldContext_Query_game(ctx context.Context, field g
 				return ec.fieldContext_Game_players(ctx, field)
 			case "frames":
 				return ec.fieldContext_Game_frames(ctx, field)
+			case "rounds":
+				return ec.fieldContext_Game_rounds(ctx, field)
 			}
 			return nil, fmt.Errorf("no field named %q was found under type Game", field.Name)
 		},
+	}
+	defer func() {
+		if r := recover(); r != nil {
+			err = ec.Recover(ctx, r)
+			ec.Error(ctx, err)
+		}
+	}()
+	ctx = graphql.WithFieldContext(ctx, fc)
+	if fc.Args, err = ec.field_Query_game_args(ctx, field.ArgumentMap(ec.Variables)); err != nil {
+		ec.Error(ctx, err)
+		return
 	}
 	return fc, nil
 }
@@ -1431,6 +1649,100 @@ func (ec *executionContext) fieldContext_Query___schema(ctx context.Context, fie
 				return ec.fieldContext___Schema_directives(ctx, field)
 			}
 			return nil, fmt.Errorf("no field named %q was found under type __Schema", field.Name)
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _Round_round(ctx context.Context, field graphql.CollectedField, obj *model.Round) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_Round_round(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (interface{}, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.Round, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		return graphql.Null
+	}
+	res := resTmp.(*int)
+	fc.Result = res
+	return ec.marshalOInt2ᚖint(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_Round_round(ctx context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Round",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Int does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _Round_frames(ctx context.Context, field graphql.CollectedField, obj *model.Round) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_Round_frames(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (interface{}, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.Frames, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		return graphql.Null
+	}
+	res := resTmp.([]*model.FrameState)
+	fc.Result = res
+	return ec.marshalOFrameState2ᚕᚖjaeder42ᚗtechᚋstateᚑtrakᚑlocalᚋgraphᚋmodelᚐFrameState(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_Round_frames(ctx context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Round",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			switch field.Name {
+			case "frame":
+				return ec.fieldContext_FrameState_frame(ctx, field)
+			case "time":
+				return ec.fieldContext_FrameState_time(ctx, field)
+			case "playerStates":
+				return ec.fieldContext_FrameState_playerStates(ctx, field)
+			case "phase":
+				return ec.fieldContext_FrameState_phase(ctx, field)
+			case "round":
+				return ec.fieldContext_FrameState_round(ctx, field)
+			}
+			return nil, fmt.Errorf("no field named %q was found under type FrameState", field.Name)
 		},
 	}
 	return fc, nil
@@ -3321,6 +3633,14 @@ func (ec *executionContext) _FrameState(ctx context.Context, sel ast.SelectionSe
 
 			out.Values[i] = ec._FrameState_playerStates(ctx, field, obj)
 
+		case "phase":
+
+			out.Values[i] = ec._FrameState_phase(ctx, field, obj)
+
+		case "round":
+
+			out.Values[i] = ec._FrameState_round(ctx, field, obj)
+
 		default:
 			panic("unknown field " + strconv.Quote(field.Name))
 		}
@@ -3357,6 +3677,10 @@ func (ec *executionContext) _Game(ctx context.Context, sel ast.SelectionSet, obj
 		case "frames":
 
 			out.Values[i] = ec._Game_frames(ctx, field, obj)
+
+		case "rounds":
+
+			out.Values[i] = ec._Game_rounds(ctx, field, obj)
 
 		default:
 			panic("unknown field " + strconv.Quote(field.Name))
@@ -3518,6 +3842,35 @@ func (ec *executionContext) _Query(ctx context.Context, sel ast.SelectionSet) gr
 		}
 	}
 	out.Dispatch()
+	return out
+}
+
+var roundImplementors = []string{"Round"}
+
+func (ec *executionContext) _Round(ctx context.Context, sel ast.SelectionSet, obj *model.Round) graphql.Marshaler {
+	fields := graphql.CollectFields(ec.OperationContext, sel, roundImplementors)
+	out := graphql.NewFieldSet(fields)
+	var invalids uint32
+	for i, field := range fields {
+		switch field.Name {
+		case "__typename":
+			out.Values[i] = graphql.MarshalString("Round")
+		case "round":
+
+			out.Values[i] = ec._Round_round(ctx, field, obj)
+
+		case "frames":
+
+			out.Values[i] = ec._Round_frames(ctx, field, obj)
+
+		default:
+			panic("unknown field " + strconv.Quote(field.Name))
+		}
+	}
+	out.Dispatch()
+	if invalids > 0 {
+		return graphql.Null
+	}
 	return out
 }
 
@@ -4358,6 +4711,54 @@ func (ec *executionContext) marshalOPlayerState2ᚖjaeder42ᚗtechᚋstateᚑtra
 		return graphql.Null
 	}
 	return ec._PlayerState(ctx, sel, v)
+}
+
+func (ec *executionContext) marshalORound2ᚕᚖjaeder42ᚗtechᚋstateᚑtrakᚑlocalᚋgraphᚋmodelᚐRound(ctx context.Context, sel ast.SelectionSet, v []*model.Round) graphql.Marshaler {
+	if v == nil {
+		return graphql.Null
+	}
+	ret := make(graphql.Array, len(v))
+	var wg sync.WaitGroup
+	isLen1 := len(v) == 1
+	if !isLen1 {
+		wg.Add(len(v))
+	}
+	for i := range v {
+		i := i
+		fc := &graphql.FieldContext{
+			Index:  &i,
+			Result: &v[i],
+		}
+		ctx := graphql.WithFieldContext(ctx, fc)
+		f := func(i int) {
+			defer func() {
+				if r := recover(); r != nil {
+					ec.Error(ctx, ec.Recover(ctx, r))
+					ret = nil
+				}
+			}()
+			if !isLen1 {
+				defer wg.Done()
+			}
+			ret[i] = ec.marshalORound2ᚖjaeder42ᚗtechᚋstateᚑtrakᚑlocalᚋgraphᚋmodelᚐRound(ctx, sel, v[i])
+		}
+		if isLen1 {
+			f(i)
+		} else {
+			go f(i)
+		}
+
+	}
+	wg.Wait()
+
+	return ret
+}
+
+func (ec *executionContext) marshalORound2ᚖjaeder42ᚗtechᚋstateᚑtrakᚑlocalᚋgraphᚋmodelᚐRound(ctx context.Context, sel ast.SelectionSet, v *model.Round) graphql.Marshaler {
+	if v == nil {
+		return graphql.Null
+	}
+	return ec._Round(ctx, sel, v)
 }
 
 func (ec *executionContext) unmarshalOString2ᚖstring(ctx context.Context, v interface{}) (*string, error) {

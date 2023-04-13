@@ -12,8 +12,8 @@ import (
 )
 
 // Game is the resolver for the Game field.
-func (r *queryResolver) Game(ctx context.Context) (*model.Game, error) {
-	var game = controllers.GetGame()
+func (r *queryResolver) Game(ctx context.Context, start *int, limit *int) (*model.Game, error) {
+	var game = controllers.GetGame(*start, *limit)
 
 	return &game, nil
 }

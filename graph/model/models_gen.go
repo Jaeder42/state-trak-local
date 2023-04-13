@@ -6,6 +6,8 @@ type FrameState struct {
 	Frame        *int           `json:"frame"`
 	Time         *float64       `json:"time"`
 	PlayerStates []*PlayerState `json:"playerStates"`
+	Phase        *string        `json:"phase"`
+	Round        *int           `json:"round"`
 }
 
 type Game struct {
@@ -13,6 +15,7 @@ type Game struct {
 	FrameRate *int          `json:"frameRate"`
 	Players   []*Player     `json:"players"`
 	Frames    []*FrameState `json:"frames"`
+	Rounds    []*Round      `json:"rounds"`
 }
 
 type Player struct {
@@ -32,6 +35,11 @@ type PlayerState struct {
 	Alive       *bool   `json:"alive"`
 	Position    *Vector `json:"position"`
 	EyePosition *Vector `json:"eyePosition"`
+}
+
+type Round struct {
+	Round  *int          `json:"round"`
+	Frames []*FrameState `json:"frames"`
 }
 
 type Vector struct {
