@@ -1,5 +1,7 @@
 import React, { useRef, useEffect, useState } from "react";
 const anubis = require("../maps/De_anubis_radar.webp");
+const ancient = require("../maps/Ancient_Radar.webp");
+
 export const Frame = ({ frame }) => {
   const canvasRef = useRef(null);
   const drawingCanvasRef = useRef(null);
@@ -8,83 +10,75 @@ export const Frame = ({ frame }) => {
   const [drawColor, setDrawColor] = useState("#FF0000"); // Set initial color to red
   const height = 500;
   const width = 500;
-
+  const transformPos = (posX, posY) => {
+    return {
+      x: posX / 10 + width / 2 + 40,
+      y: -posY / 10 + height / 2 - 40,
+    };
+  };
   const draw = (ctx, player) => {
     const { position, alive, team, firing, yaw, name } = player;
-    if (alive) {
-      ctx.fillStyle = team === "CT" ? "#68a3e5" : "#e6f13d";
 
-      var rad = (90 - yaw) * (Math.PI / 180);
-      var x = position.x / 15 + height / 2;
-      var y = -position.y / 15 + width / 2;
-
-      ctx.save();
-      ctx.strokeStyle = "#ffffff";
-
-      ctx.strokeText(name, x, y);
-      ctx.beginPath();
-      ctx.arc(x, y, 4, 0, 2 * Math.PI);
-      ctx.fill();
+    ctx.fillStyle = team === "CT" ? "#68a3e5" : "#e6f13d";
+    if (!alive) {
+      ctx.fillStyle = "#ff0000";
     }
-    // if (!alive) {
-    //   ctx.fillStyle = "#FF0000";
-    //   ctx.beginPath();
-    //   ctx.arc(
-    //     position.X / 15 + height / 2,
-    //     -position.Y / 15 + width / 2,
-    //     2,
-    //     0,
-    //     2 * Math.PI
-    //   );
-    //   ctx.fill();
-    // }
+    var rad = (90 - yaw) * (Math.PI / 180);
+    var { x, y } = transformPos(position.x, position.y);
+    // var x = position.x / 15 + height / 2;
+    // var y = -position.y / 15 + width / 2;
+    ctx.save();
+    ctx.strokeStyle = "#ffffff";
+    if (!alive) {
+      ctx.strokeStyle = "#939393";
+    }
 
-    ctx.fillStyle = "#00FF00";
+    ctx.strokeText(name, x + 3, y - 3);
     ctx.beginPath();
-    ctx.translate(x, y);
-    ctx.rotate(rad);
-    ctx.rect(0, -15, 1, 15);
-    if (firing) {
-      ctx.fillStyle = "#FFFFFF";
+    ctx.arc(x, y, 4, 0, 2 * Math.PI);
+    ctx.fill();
+    if (alive) {
+      // ctx.fillStyle = "#FF0000";
+      // ctx.beginPath();
+      // ctx.arc(x, y, 2, 0, 2 * Math.PI);
+      // ctx.fill();
+
+      ctx.fillStyle = "#00FF00";
       ctx.beginPath();
-      // ctx.arc(x, y, 4, 0, 2 * Math.PI);
-      ctx.rect(0, -30, 1, 30);
+      ctx.translate(x, y);
+      ctx.rotate(rad);
+      ctx.rect(0, -15, 1, 15);
+      if (firing) {
+        ctx.fillStyle = "#FFFFFF";
+        ctx.beginPath();
+        // ctx.arc(x, y, 4, 0, 2 * Math.PI);
+        ctx.rect(0, -30, 1, 30);
+        ctx.fill();
+      }
       ctx.fill();
     }
-    ctx.fill();
     ctx.restore();
   };
 
   const drawBomb = (ctx, bomb) => {
     if (bomb && bomb.planted) {
-
       ctx.fillStyle = "#FF0000";
+      const { x, y } = transformPos(bomb.position.x, bomb.position.y);
       ctx.beginPath();
-      ctx.rect(
-        bomb.position.x/15  + height / 2,
-        -bomb.position.y/15  + width / 2,
-        7,
-        7
-      );
+      ctx.rect(x, y, 7, 7);
       ctx.fill();
     }
   };
 
   const drawSmoke = (ctx, smoke) => {
     // TODO DRAW THE SMOKE ON THE MAP
+    const { x, y } = transformPos(smoke.position.x, smoke.position.y);
 
     ctx.fillStyle = "#4a4a4a";
     ctx.beginPath();
-    ctx.arc(
-      smoke.position.x/15 + height / 2 ,
-      -smoke.position.y/15 + width / 2 ,
-      15,
-      0,
-      2 * Math.PI
-    );
+    ctx.arc(x, y, 15, 0, 2 * Math.PI);
     ctx.fill();
-
-  }
+  };
 
   const startDrawing = (e) => {
     setIsDrawing(true);
@@ -109,7 +103,12 @@ export const Frame = ({ frame }) => {
 
   const clearDrawing = () => {
     const ctx = drawingCanvasRef.current.getContext("2d");
-    ctx.clearRect(0, 0, drawingCanvasRef.current.width, drawingCanvasRef.current.height);
+    ctx.clearRect(
+      0,
+      0,
+      drawingCanvasRef.current.width,
+      drawingCanvasRef.current.height
+    );
   };
 
   useEffect(() => {
@@ -122,16 +121,18 @@ export const Frame = ({ frame }) => {
     });
     frame?.smokes?.map((smoke) => {
       drawSmoke(context, smoke);
-    } );
+    });
     drawBomb(context, frame?.bombState);
   }, [draw]);
   return (
-    <div style={{ display: "flex", flexDirection: "column", alignItems: "center" }}>
-      <div>{frame?.frame}</div>
-      <div>{frame?.round}</div>
+    <div
+      style={{ display: "flex", flexDirection: "column", alignItems: "center" }}
+    >
+      <div>{frame?.frame || "-"}</div>
+      <div>{frame?.round || "-"}</div>
       <div className="stack">
         <div className="map">
-          <img height={360} src={anubis} />
+          <img height={500} width={500} src={ancient} />
         </div>
         <div className="canvas">
           <canvas height={500} width={500} ref={canvasRef} />
@@ -147,7 +148,9 @@ export const Frame = ({ frame }) => {
           />
         </div>
       </div>
-      <button className="controls" onClick={clearDrawing}>Clear Drawing</button>
+      <button className="controls" onClick={clearDrawing}>
+        Clear Drawing
+      </button>
     </div>
   );
 };

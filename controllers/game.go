@@ -7,9 +7,9 @@ import (
 	"os"
 	"strconv"
 
-	dem "github.com/markus-wa/demoinfocs-golang/v3/pkg/demoinfocs"
-	"github.com/markus-wa/demoinfocs-golang/v3/pkg/demoinfocs/common"
-	"github.com/markus-wa/demoinfocs-golang/v3/pkg/demoinfocs/events"
+	dem "github.com/markus-wa/demoinfocs-golang/v5/pkg/demoinfocs"
+	"github.com/markus-wa/demoinfocs-golang/v5/pkg/demoinfocs/events"
+	"github.com/markus-wa/demoinfocs-golang/v5/pkg/demoinfocs/msg"
 	"golang.org/x/exp/slices"
 )
 
@@ -44,6 +44,10 @@ type FrameState struct {
 type Player struct {
 	Name    *string `json:"name"`
 	SteamID *string `json:"steamId"`
+}
+type Team struct {
+	Players Player
+	Side    string
 }
 
 type BombState struct {
@@ -84,11 +88,13 @@ func GetGame(start int, limit int) Game {
 
 	p := dem.NewParser(f)
 	defer p.Close()
+	var mapName string
 	// var frames []*model.FrameState
 	var players []Player
+
 	var gameStartFrame int
 	var rounds []Round
-
+	var currentRound = 0
 	smokes := map[int]SmokeState{}
 	flashes := []FlashState{}
 
@@ -102,20 +108,23 @@ func GetGame(start int, limit int) Game {
 
 	var firing []uint64
 	p.RegisterEventHandler(func(e events.FrameDone) {
-		if p.CurrentFrame()%10 == 0 {
+
+		if p.CurrentFrame()%1 == 0 {
 			// TODO get state for all players at any frame
 			var participants = p.GameState().Participants().Playing()
 			var playerStates []PlayerState
 			for _, element := range participants {
-				var team = "T"
+				var team = ""
 				var firingNow = false
-				idx := slices.IndexFunc(p.GameState().TeamCounterTerrorists().Members(), func(c *common.Player) bool {
-					return c.SteamID64 == element.SteamID64
-				})
-				if idx > -1 {
+				teamId := element.TeamState.Team()
+				if teamId == 2 {
+					team = "T"
+				}
+				if teamId == 3 {
 					team = "CT"
 				}
-				idx = slices.IndexFunc(firing, func(player uint64) bool {
+
+				idx := slices.IndexFunc(firing, func(player uint64) bool {
 					return player == element.SteamID64
 				})
 				if idx > -1 {
@@ -161,7 +170,7 @@ func GetGame(start int, limit int) Game {
 			}
 			var currentFrame = p.CurrentFrame()
 			var currentTime = p.CurrentTime().Seconds()
-			var round = p.GameState().TotalRoundsPlayed()
+			var round = currentRound // p.GameState().TotalRoundsPlayed()
 
 			if len(rounds) <= Max(1, round) {
 				rounds = append(rounds, Round{
@@ -214,10 +223,14 @@ func GetGame(start int, limit int) Game {
 		}
 	})
 	p.RegisterEventHandler(func(e events.SmokeExpired) {
-		delete(smokes, e.Grenade.Entity.ID())
-		fmt.Println(len(smokes))
+		if e.Grenade != nil {
+			delete(smokes, e.Grenade.Entity.ID())
+			fmt.Println(len(smokes))
+		}
 	})
 	p.RegisterEventHandler(func(e events.FlashExplode) {
+		fmt.Println("Flash popped! ")
+
 		flashes = append(flashes, FlashState{
 			ID: e.Grenade.Entity.ID(),
 			Position: Vector{
@@ -226,10 +239,16 @@ func GetGame(start int, limit int) Game {
 			},
 		})
 	})
-	// p.RegisterEventHandler(func(e events.RoundStart) {
-	// 	fmt.Println("New round ------------------------------------------------------ ")
-	// })
+	p.RegisterEventHandler(func(e events.RoundStart) {
+		fmt.Println("New round ------------------------------------------------------ ")
+		currentRound = p.GameState().TotalRoundsPlayed()
+
+	})
 	p.RegisterEventHandler(func(e events.RoundEnd) {
+		fmt.Println(p.GameState().TeamTerrorists().Score(), p.GameState().TeamCounterTerrorists().Score())
+
+		fmt.Println("Round ended ------------------------------------------------------ ")
+
 		smokes = map[int]SmokeState{}
 		flashes = []FlashState{}
 		currentBomb = BombState{
@@ -242,7 +261,10 @@ func GetGame(start int, limit int) Game {
 	})
 
 	p.RegisterEventHandler(func(e events.WeaponFire) {
-		firing = append(firing, e.Shooter.SteamID64)
+		// fmt.Println(e.Shooter)
+		if e.Shooter != nil {
+			firing = append(firing, e.Shooter.SteamID64)
+		}
 	})
 	p.RegisterEventHandler(func(e events.BombPlanted) {
 		// fmt.Printf("%s Planted the bomb \n", e.BombEvent.Player.Position())
@@ -265,15 +287,23 @@ func GetGame(start int, limit int) Game {
 	// 	if e.PenetratedObjects > 0 {
 	// 		wallBang = " (WB)"
 	// 	}
-	// 	fmt.Printf("%s <%v%s%s> %s\n", e.Killer, e.Weapon, hs, wallBang, e.Victim)
+	// 	// fmt.Printf("%s <%v%s%s> %s\n", e.Killer, e.Weapon, hs, wallBang, e.Victim)
+	// 	fmt.Printf("%s <%v%s%s> %s\n", nil, e.Weapon, hs, wallBang, nil)
 	// })
+
+	p.RegisterNetMessageHandler(func(m *msg.CSVCMsg_ServerInfo) {
+		mapName = m.GetMapName()
+		fmt.Println(mapName)
+	})
+
 	// Parse to end
 	err = p.ParseToEnd()
-
-	var frameRate int = int(p.Header().PlaybackFrames / int(p.Header().PlaybackTime.Seconds()))
+	fmt.Println(err)
+	fmt.Println(mapName)
+	var frameRate int = 60 //int(p.Header().PlaybackFrames / int(p.Header().PlaybackTime.Seconds()))
 	var game = Game{
 		Players: players,
-		Map:     p.Header().MapName,
+		Map:     mapName, //p.Header().MapName,
 		// Frames:  frames[start:lastFrame],
 		Rounds:         rounds,
 		GameStartFrame: gameStartFrame,
@@ -285,19 +315,19 @@ func GetGame(start int, limit int) Game {
 		Rounds:    game.Rounds,
 		Players:   game.Players,
 	}
-
+	fmt.Println("Parsed game")
 	for _, round := range game.Rounds {
-		print(round.Round)
 		roundJson, err := json.Marshal(round)
-		err = os.WriteFile("./client/src/components/data/output/"+strconv.Itoa(*round.Round)+".json", roundJson, 0644)
+		err = os.WriteFile("./server/data/output/"+strconv.Itoa(*round.Round)+".json", roundJson, 0644)
 		if err != nil {
 			log.Panic("Something went wrong: ", err)
 		}
 	}
+
+	game.Rounds = nil
 	jsonObj, err := json.Marshal(game)
 
-	err = os.WriteFile("./output.json", jsonObj, 0644)
-	// // fmt.Println(string(b))
+	err = os.WriteFile("./server/data/output/output.json", jsonObj, 0644)
 	if err != nil {
 		log.Panic("failed to parse demo: ", err)
 	}
