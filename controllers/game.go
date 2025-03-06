@@ -1,55 +1,65 @@
 package controllers
 
 import (
+	"encoding/json"
+	"fmt"
 	"log"
 	"os"
 	"strconv"
 
-	"github.com/golang/geo/r3"
 	dem "github.com/markus-wa/demoinfocs-golang/v3/pkg/demoinfocs"
 	"github.com/markus-wa/demoinfocs-golang/v3/pkg/demoinfocs/common"
 	"github.com/markus-wa/demoinfocs-golang/v3/pkg/demoinfocs/events"
 	"golang.org/x/exp/slices"
-	"jaeder42.tech/state-trak-local/graph/model"
 )
 
 type PlayerState struct {
-	Name        string    `json:"name"`
-	SteamId     uint64    `json:"steamId"`
-	Kills       int       `json:"kills"`
-	Deaths      int       `json:"deaths"`
-	Assists     int       `json:"assists"`
-	Mvps        int       `json:"mvps"`
-	Position    r3.Vector `json:"position"`
-	EyePosition r3.Vector `json:"eyePosition"`
-	Team        string    `json:"team"`
-	Firing      bool      `json:"firing"`
-	Alive       bool      `json:"alive"`
+	Name     string  `json:"name"`
+	SteamId  string  `json:"steamId"`
+	Kills    int     `json:"kills"`
+	Deaths   int     `json:"deaths"`
+	Assists  int     `json:"assists"`
+	Mvps     int     `json:"mvps"`
+	Position Vector  `json:"position"`
+	Yaw      float32 `json:"yaw"`
+	Team     string  `json:"team"`
+	Firing   bool    `json:"firing"`
+	Alive    bool    `json:"alive"`
 }
 
 type FrameState struct {
 	Frame        int           `json:"frame"`
 	Time         float64       `json:"time"`
-	PlayerStates []PlayerState `json:"playerState"`
+	PlayerStates []PlayerState `json:"playerStates"`
 	Phase        string        `json:"phase"`
 	Round        int           `json:"round"`
 }
+type Player struct {
+	Name    *string `json:"name"`
+	SteamID *string `json:"steamId"`
+}
 
 type Round struct {
-	Frames []*model.FrameState `json:"frames"`
+	Round  *int         `json:"round"`
+	Frames []FrameState `json:"frames"`
 }
 
 type Game struct {
-	Players        []*model.Player     `json:"players"`
-	Map            string              `json:"map"`
-	Frames         []*model.FrameState `json:"frames"`
-	GameStartFrame int                 `json:"gameStartFrame"`
-	FrameRate      int                 `json:"frameRate"`
-	Rounds         []*model.Round      `json:"rounds"`
+	Players        []Player     `json:"players"`
+	Map            string       `json:"map"`
+	Frames         []FrameState `json:"frames"`
+	GameStartFrame int          `json:"gameStartFrame"`
+	FrameRate      int          `json:"frameRate"`
+	Rounds         []Round      `json:"rounds"`
 }
 
-func GetGame(start int, limit int) model.Game {
-	f, err := os.Open("./teamtes.dem")
+type Vector struct {
+	X *float64 `json:"x"`
+	Y *float64 `json:"y"`
+}
+
+func GetGame(start int, limit int) Game {
+	f, err := os.Open("./test.dem")
 	if err != nil {
 		log.Panic("failed to open demo file: ", err)
 	}
@@ -58,16 +68,16 @@ func GetGame(start int, limit int) model.Game {
 	p := dem.NewParser(f)
 	defer p.Close()
 	// var frames []*model.FrameState
-	var players []*model.Player
+	var players []Player
 	var gameStartFrame int
-	var rounds []*model.Round
+	var rounds []Round
 
 	var firing []uint64
 	p.RegisterEventHandler(func(e events.FrameDone) {
 		if p.CurrentFrame()%10 == 0 {
 			// TODO get state for all players at any frame
 			var participants = p.GameState().Participants().Playing()
-			var playerStates []*model.PlayerState
+			var playerStates []PlayerState
 			for _, element := range participants {
 				var team = "T"
 				var firingNow = false
@@ -83,6 +93,7 @@ func GetGame(start int, limit int) model.Game {
 				if idx > -1 {
 					firingNow = true
 				}
+
 				var name = element.Name
 				var kills = element.Kills()
 				var deaths = element.Deaths()
@@ -90,30 +101,33 @@ func GetGame(start int, limit int) model.Game {
 				var mvps = element.MVPs()
 				var steamId = strconv.FormatUint(element.SteamID64, 10)
 				var alive = element.IsAlive() && element.Health() > 0
-
+				var yaw = element.ViewDirectionX()
 				var elementPosition = element.Position()
-				var position = model.Vector{
+
+				element.ViewDirectionX()
+
+				var position = Vector{
 					X: &elementPosition.X,
 					Y: &elementPosition.Y,
 				}
 
 				playerStates = append(playerStates,
-					&model.PlayerState{
-						Name:     &name,
-						Kills:    &kills,
-						Deaths:   &deaths,
-						Assists:  &assists,
-						Mvps:     &mvps,
-						SteamID:  &steamId,
-						Position: &position,
-						// EyePosition: element.PositionEyes(),
-						Team:   &team,
-						Firing: &firingNow,
-						Alive:  &alive,
+					PlayerState{
+						Name:     name,
+						Kills:    kills,
+						Deaths:   deaths,
+						Assists:  assists,
+						Mvps:     mvps,
+						SteamId:  steamId,
+						Position: position,
+						Yaw:      yaw,
+						Team:     team,
+						Firing:   firingNow,
+						Alive:    alive,
 					})
 			}
 			var phase = "PAUSED"
-
+			firing = []uint64{}
 			if p.GameState().GamePhase() == 2 {
 				phase = "LIVE"
 			}
@@ -121,18 +135,18 @@ func GetGame(start int, limit int) model.Game {
 			var currentTime = p.CurrentTime().Seconds()
 			var round = p.GameState().TotalRoundsPlayed()
 
-			if len(rounds) <= Max(1, round) || rounds[round] == nil {
-				rounds = append(rounds, &model.Round{
+			if len(rounds) <= Max(1, round) {
+				rounds = append(rounds, Round{
 					Round: &round,
 				})
 			}
 			var frames = rounds[round].Frames
-			frames = append(frames, &model.FrameState{
-				Frame:        &currentFrame,
-				Time:         &currentTime,
+			frames = append(frames, FrameState{
+				Frame:        currentFrame,
+				Time:         currentTime,
 				PlayerStates: playerStates,
-				Phase:        &phase,
-				Round:        &round,
+				Phase:        phase,
+				Round:        round,
 			})
 			rounds[round].Frames = frames
 
@@ -143,7 +157,7 @@ func GetGame(start int, limit int) model.Game {
 	})
 	p.RegisterEventHandler(func(e events.PlayerConnect) {
 		var steamId = strconv.FormatUint(e.Player.SteamID64, 10)
-		players = append(players, &model.Player{
+		players = append(players, Player{
 			Name:    &e.Player.Name,
 			SteamID: &steamId,
 		})
@@ -156,16 +170,16 @@ func GetGame(start int, limit int) model.Game {
 	// 	fmt.Println("New round ------------------------------------------------------ ")
 	// })
 	// // p.RegisterEventHandler(func(e events.RoundEnd) {
-	// p.RegisterEventHandler(func(e events.WeaponFire) {
-	// 	// firing = append(firing, e.Shooter.SteamID64)
-	// })
 	// 	fmt.Printf("Round over %s \n", e.Message)
 
 	// })
 
-	// p.RegisterEventHandler(func(e events.BombPlanted) {
-	// 	fmt.Printf("%s Planted the bomb \n", e.Player)
-	// })
+	p.RegisterEventHandler(func(e events.WeaponFire) {
+		firing = append(firing, e.Shooter.SteamID64)
+	})
+	p.RegisterEventHandler(func(e events.BombPlanted) {
+		fmt.Printf("%s Planted the bomb \n", e.BombEvent.Player.Position())
+	})
 
 	// p.RegisterEventHandler(func(e events.Kill) {
 	// 	var hs string
@@ -186,19 +200,28 @@ func GetGame(start int, limit int) model.Game {
 		Players: players,
 		Map:     p.Header().MapName,
 		// Frames:  frames[start:lastFrame],
-		Rounds:         rounds[start : start+limit],
+		Rounds:         rounds,
 		GameStartFrame: gameStartFrame,
 		FrameRate:      frameRate,
 	}
-	var gameModel = model.Game{
-		Map:       &game.Map,
-		FrameRate: &game.FrameRate,
+	var gameModel = Game{
+		Map:       game.Map,
+		FrameRate: game.FrameRate,
 		Rounds:    game.Rounds,
 		Players:   game.Players,
 	}
-	// jsonObj, err := json.Marshal(game)
 
-	// err = os.WriteFile("./output.json", jsonObj, 0644)
+	for _, round := range game.Rounds {
+		print(round.Round)
+		roundJson, err := json.Marshal(round)
+		err = os.WriteFile("./output/"+strconv.Itoa(*round.Round)+".json", roundJson, 0644)
+		if err != nil {
+			log.Panic("Something went wrong: ", err)
+		}
+	}
+	jsonObj, err := json.Marshal(game)
+
+	err = os.WriteFile("./output.json", jsonObj, 0644)
 	// // fmt.Println(string(b))
 	if err != nil {
 		log.Panic("failed to parse demo: ", err)
