@@ -27,16 +27,33 @@ type PlayerState struct {
 	Alive    bool    `json:"alive"`
 }
 
+type SmokeState struct {
+	ID       int    `json:"id"`
+	Position Vector `json:"position"`
+}
+
 type FrameState struct {
 	Frame        int           `json:"frame"`
 	Time         float64       `json:"time"`
 	PlayerStates []PlayerState `json:"playerStates"`
 	Phase        string        `json:"phase"`
 	Round        int           `json:"round"`
+	BombState    BombState     `json:"bombState"`
+	Smokes       []SmokeState  `json:"smokes"`
 }
 type Player struct {
 	Name    *string `json:"name"`
 	SteamID *string `json:"steamId"`
+}
+
+type BombState struct {
+	Planted  bool   `json:"planted"`
+	Position Vector `json:"position"`
+}
+
+type FlashState struct {
+	ID       int    `json:"id"`
+	Position Vector `json:"position"`
 }
 
 type Round struct {
@@ -71,6 +88,17 @@ func GetGame(start int, limit int) Game {
 	var players []Player
 	var gameStartFrame int
 	var rounds []Round
+
+	smokes := map[int]SmokeState{}
+	flashes := []FlashState{}
+
+	var currentBomb = BombState{
+		Planted: false,
+		Position: Vector{
+			X: nil,
+			Y: nil,
+		},
+	}
 
 	var firing []uint64
 	p.RegisterEventHandler(func(e events.FrameDone) {
@@ -141,12 +169,19 @@ func GetGame(start int, limit int) Game {
 				})
 			}
 			var frames = rounds[round].Frames
+			var smokesArray []SmokeState
+			for _, v := range smokes {
+				smokesArray = append(smokesArray, v)
+			}
+
 			frames = append(frames, FrameState{
 				Frame:        currentFrame,
 				Time:         currentTime,
 				PlayerStates: playerStates,
 				Phase:        phase,
 				Round:        round,
+				BombState:    currentBomb,
+				Smokes:       smokesArray,
 			})
 			rounds[round].Frames = frames
 
@@ -162,23 +197,63 @@ func GetGame(start int, limit int) Game {
 			SteamID: &steamId,
 		})
 	})
+
 	// p.RegisterEventHandler(func(e events.MatchStart) {
 	// 	fmt.Println("Game started --------------------------------------------------")
 	// })
 
+	p.RegisterEventHandler(func(e events.SmokeStart) {
+		fmt.Printf("Smoke start %d \n", e.Grenade.Entity.ID())
+
+		smokes[e.Grenade.Entity.ID()] = SmokeState{
+			ID: e.Grenade.Entity.ID(),
+			Position: Vector{
+				X: &e.Position.X,
+				Y: &e.Position.Y,
+			},
+		}
+	})
+	p.RegisterEventHandler(func(e events.SmokeExpired) {
+		delete(smokes, e.Grenade.Entity.ID())
+		fmt.Println(len(smokes))
+	})
+	p.RegisterEventHandler(func(e events.FlashExplode) {
+		flashes = append(flashes, FlashState{
+			ID: e.Grenade.Entity.ID(),
+			Position: Vector{
+				X: &e.Position.X,
+				Y: &e.Position.Y,
+			},
+		})
+	})
 	// p.RegisterEventHandler(func(e events.RoundStart) {
 	// 	fmt.Println("New round ------------------------------------------------------ ")
 	// })
-	// // p.RegisterEventHandler(func(e events.RoundEnd) {
-	// 	fmt.Printf("Round over %s \n", e.Message)
-
-	// })
+	p.RegisterEventHandler(func(e events.RoundEnd) {
+		smokes = map[int]SmokeState{}
+		flashes = []FlashState{}
+		currentBomb = BombState{
+			Planted: false,
+			Position: Vector{
+				X: nil,
+				Y: nil,
+			},
+		}
+	})
 
 	p.RegisterEventHandler(func(e events.WeaponFire) {
 		firing = append(firing, e.Shooter.SteamID64)
 	})
 	p.RegisterEventHandler(func(e events.BombPlanted) {
-		fmt.Printf("%s Planted the bomb \n", e.BombEvent.Player.Position())
+		// fmt.Printf("%s Planted the bomb \n", e.BombEvent.Player.Position())
+		var pos = e.BombEvent.Player.Position()
+		currentBomb = BombState{
+			Planted: true,
+			Position: Vector{
+				X: &pos.X,
+				Y: &pos.Y,
+			},
+		}
 	})
 
 	// p.RegisterEventHandler(func(e events.Kill) {
@@ -214,7 +289,7 @@ func GetGame(start int, limit int) Game {
 	for _, round := range game.Rounds {
 		print(round.Round)
 		roundJson, err := json.Marshal(round)
-		err = os.WriteFile("./output/"+strconv.Itoa(*round.Round)+".json", roundJson, 0644)
+		err = os.WriteFile("./client/src/components/data/output/"+strconv.Itoa(*round.Round)+".json", roundJson, 0644)
 		if err != nil {
 			log.Panic("Something went wrong: ", err)
 		}
