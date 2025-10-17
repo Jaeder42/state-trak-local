@@ -1,3 +1,5 @@
 output.json
 teamtes.dem
 node_modules
+server/data/output/*.json
+*.dem
