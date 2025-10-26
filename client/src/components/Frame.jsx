@@ -69,6 +69,14 @@ export const Frame = ({ frame }) => {
       ctx.fill();
     }
   };
+    const drawFlash = (ctx, flash) => {
+    const { x, y } = transformPos(flash.position.x, flash.position.y);
+
+    ctx.fillStyle = `rgba(255, 255, 255, ${flash.power / 100})`;
+    ctx.beginPath();
+    ctx.arc(x, y, 15, 0, 2 * Math.PI);
+    ctx.fill();
+  };
 
   const drawSmoke = (ctx, smoke) => {
     // TODO DRAW THE SMOKE ON THE MAP
@@ -122,6 +130,9 @@ export const Frame = ({ frame }) => {
     frame?.smokes?.map((smoke) => {
       drawSmoke(context, smoke);
     });
+    frame?.flashes?.map((flash) => {
+      drawFlash(context, flash);
+    });
     drawBomb(context, frame?.bombState);
   }, [draw]);
   return (
@@ -130,6 +141,7 @@ export const Frame = ({ frame }) => {
     >
       <div>{frame?.frame || "-"}</div>
       <div>{frame?.round || "-"}</div>
+      <div>{frame?.ctScore || 0} - {frame?.tScore || 0}</div>
       <div className="stack">
         <div className="map">
           <img height={500} width={500} src={ancient} />

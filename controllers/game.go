@@ -34,12 +34,15 @@ type SmokeState struct {
 
 type FrameState struct {
 	Frame        int           `json:"frame"`
+	CTScore      int           `json:"ctScore"`
+	TScore       int           `json:"tScore"`
 	Time         float64       `json:"time"`
 	PlayerStates []PlayerState `json:"playerStates"`
 	Phase        string        `json:"phase"`
 	Round        int           `json:"round"`
 	BombState    BombState     `json:"bombState"`
 	Smokes       []SmokeState  `json:"smokes"`
+	Flashes      []FlashState  `json:"flashes"`
 }
 type Player struct {
 	Name    *string `json:"name"`
@@ -57,6 +60,7 @@ type BombState struct {
 
 type FlashState struct {
 	ID       int    `json:"id"`
+	Power    int    `json:"power"`
 	Position Vector `json:"position"`
 }
 
@@ -96,7 +100,9 @@ func GetGame(start int, limit int) Game {
 	var rounds []Round
 	var currentRound = 0
 	smokes := map[int]SmokeState{}
-	flashes := []FlashState{}
+	flashes := map[int]FlashState{}
+	tScore := -1
+	ctScore := -1
 
 	var currentBomb = BombState{
 		Planted: false,
@@ -172,15 +178,29 @@ func GetGame(start int, limit int) Game {
 			var currentTime = p.CurrentTime().Seconds()
 			var round = currentRound // p.GameState().TotalRoundsPlayed()
 
-			if len(rounds) <= Max(1, round) {
+			tScore = p.GameState().TeamTerrorists().Score()
+			ctScore = p.GameState().TeamCounterTerrorists().Score()
+
+			if len(rounds) <= round {
 				rounds = append(rounds, Round{
 					Round: &round,
 				})
 			}
 			var frames = rounds[round].Frames
+
 			var smokesArray []SmokeState
 			for _, v := range smokes {
 				smokesArray = append(smokesArray, v)
+			}
+
+			var flashArray []FlashState
+			for index, v := range flashes {
+				v.Power -= 1
+				flashes[index] = v
+				if v.Power <= 0 {
+					continue
+				}
+				flashArray = append(flashArray, v)
 			}
 
 			frames = append(frames, FrameState{
@@ -191,6 +211,9 @@ func GetGame(start int, limit int) Game {
 				Round:        round,
 				BombState:    currentBomb,
 				Smokes:       smokesArray,
+				Flashes:      flashArray,
+				CTScore:      ctScore,
+				TScore:       tScore,
 			})
 			rounds[round].Frames = frames
 
@@ -198,6 +221,8 @@ func GetGame(start int, limit int) Game {
 	})
 	p.RegisterEventHandler(func(e events.AnnouncementMatchStarted) {
 		gameStartFrame = p.CurrentFrame()
+		fmt.Println(p.GameState().TeamTerrorists().Members())
+
 	})
 	p.RegisterEventHandler(func(e events.PlayerConnect) {
 		var steamId = strconv.FormatUint(e.Player.SteamID64, 10)
@@ -207,50 +232,49 @@ func GetGame(start int, limit int) Game {
 		})
 	})
 
-	// p.RegisterEventHandler(func(e events.MatchStart) {
-	// 	fmt.Println("Game started --------------------------------------------------")
-	// })
-
 	p.RegisterEventHandler(func(e events.SmokeStart) {
-		fmt.Printf("Smoke start %d \n", e.Grenade.Entity.ID())
+		if e.Grenade != nil && e.Grenade.Entity != nil {
+			// fmt.Printf("Smoke start %d \n", e.Grenade.Entity.ID())
 
-		smokes[e.Grenade.Entity.ID()] = SmokeState{
-			ID: e.Grenade.Entity.ID(),
-			Position: Vector{
-				X: &e.Position.X,
-				Y: &e.Position.Y,
-			},
+			smokes[e.Grenade.Entity.ID()] = SmokeState{
+				ID: e.Grenade.Entity.ID(),
+				Position: Vector{
+					X: &e.Position.X,
+					Y: &e.Position.Y,
+				},
+			}
 		}
 	})
 	p.RegisterEventHandler(func(e events.SmokeExpired) {
-		if e.Grenade != nil {
+		if e.Grenade != nil && e.Grenade.Entity != nil {
 			delete(smokes, e.Grenade.Entity.ID())
-			fmt.Println(len(smokes))
+			// fmt.Println(len(smokes))
 		}
 	})
 	p.RegisterEventHandler(func(e events.FlashExplode) {
 		fmt.Println("Flash popped! ")
+		if e.Grenade != nil && e.Grenade.Entity != nil {
 
-		flashes = append(flashes, FlashState{
-			ID: e.Grenade.Entity.ID(),
-			Position: Vector{
-				X: &e.Position.X,
-				Y: &e.Position.Y,
-			},
-		})
+			flashes[e.Grenade.Entity.ID()] = FlashState{
+				ID:    e.Grenade.Entity.ID(),
+				Power: 100,
+				Position: Vector{
+					X: &e.Position.X,
+					Y: &e.Position.Y,
+				},
+			}
+		}
 	})
 	p.RegisterEventHandler(func(e events.RoundStart) {
-		fmt.Println("New round ------------------------------------------------------ ")
-		currentRound = p.GameState().TotalRoundsPlayed()
+		// fmt.Println("New round ------------------------------------------------------ ")
+		currentRound = p.GameState().TotalRoundsPlayed() + 1
 
 	})
 	p.RegisterEventHandler(func(e events.RoundEnd) {
-		fmt.Println(p.GameState().TeamTerrorists().Score(), p.GameState().TeamCounterTerrorists().Score())
-
-		fmt.Println("Round ended ------------------------------------------------------ ")
+		// fmt.Println("Round ended ------------------------------------------------------ ")
 
 		smokes = map[int]SmokeState{}
-		flashes = []FlashState{}
+		flashes = map[int]FlashState{}
 		currentBomb = BombState{
 			Planted: false,
 			Position: Vector{

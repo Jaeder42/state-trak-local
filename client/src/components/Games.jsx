@@ -8,7 +8,7 @@ export const Games = () => {
   const [loading, setLoading] = useState(false);
   const [playing, setPlaying] = useState(false);
   const [intervalID, setIntervalID] = useState(null);
-  const [metaData, setMetaData] = useState(null);
+  const [metaData, setMetaData] = useState({});
   const fetchMeta = async () => {
     try {
       const meta = await fetch("http://localhost:3001/output");
@@ -60,7 +60,6 @@ export const Games = () => {
   const onChange = (e) => {
     setIndex(e.target.value);
   };
-
   return (
     <div>
       <h1>{metaData.map}</h1>
@@ -71,7 +70,6 @@ export const Games = () => {
           <div
             style={{
               backgroundColor: "transparent",
-              border: "1px solid white",
             }}
           >
             <Frame
@@ -101,6 +99,12 @@ export const Games = () => {
               </div>
             </div>
           </div>
+          {/* <p>{
+            output.frames
+                  ? JSON.stringify(output.frames[Math.min(index, output.frames?.length - 1)]?.playerStates[0])
+                  : 'null'
+          }</p> */}
+          <p>{JSON.stringify(metaData)}</p>
         </>
       )}
     </div>
