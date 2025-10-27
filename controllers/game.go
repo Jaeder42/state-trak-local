@@ -32,6 +32,10 @@ type SmokeState struct {
 	Position Vector `json:"position"`
 }
 
+type Grenade struct {
+	Position Vector `json:"position"`
+}
+
 type FrameState struct {
 	Frame        int           `json:"frame"`
 	CTScore      int           `json:"ctScore"`
@@ -43,6 +47,7 @@ type FrameState struct {
 	BombState    BombState     `json:"bombState"`
 	Smokes       []SmokeState  `json:"smokes"`
 	Flashes      []FlashState  `json:"flashes"`
+	Grenades     []Grenade     `json:"grenades"`
 }
 type Player struct {
 	Name    *string `json:"name"`
@@ -79,8 +84,8 @@ type Game struct {
 }
 
 type Vector struct {
-	X *float64 `json:"x"`
-	Y *float64 `json:"y"`
+	X float64 `json:"x"`
+	Y float64 `json:"y"`
 }
 
 func GetGame(start int, limit int) Game {
@@ -107,8 +112,8 @@ func GetGame(start int, limit int) Game {
 	var currentBomb = BombState{
 		Planted: false,
 		Position: Vector{
-			X: nil,
-			Y: nil,
+			X: 0,
+			Y: 0,
 		},
 	}
 
@@ -150,8 +155,8 @@ func GetGame(start int, limit int) Game {
 				element.ViewDirectionX()
 
 				var position = Vector{
-					X: &elementPosition.X,
-					Y: &elementPosition.Y,
+					X: elementPosition.X,
+					Y: elementPosition.Y,
 				}
 
 				playerStates = append(playerStates,
@@ -203,6 +208,16 @@ func GetGame(start int, limit int) Game {
 				flashArray = append(flashArray, v)
 			}
 
+			var grenades []Grenade
+			for _, v := range p.GameState().GrenadeProjectiles() {
+				grenades = append(grenades, Grenade{
+					Position: Vector{
+						X: v.Position().X,
+						Y: v.Position().Y,
+					},
+				})
+			}
+
 			frames = append(frames, FrameState{
 				Frame:        currentFrame,
 				Time:         currentTime,
@@ -214,6 +229,7 @@ func GetGame(start int, limit int) Game {
 				Flashes:      flashArray,
 				CTScore:      ctScore,
 				TScore:       tScore,
+				Grenades:     grenades,
 			})
 			rounds[round].Frames = frames
 
@@ -239,8 +255,8 @@ func GetGame(start int, limit int) Game {
 			smokes[e.Grenade.Entity.ID()] = SmokeState{
 				ID: e.Grenade.Entity.ID(),
 				Position: Vector{
-					X: &e.Position.X,
-					Y: &e.Position.Y,
+					X: e.Position.X,
+					Y: e.Position.Y,
 				},
 			}
 		}
@@ -259,8 +275,8 @@ func GetGame(start int, limit int) Game {
 				ID:    e.Grenade.Entity.ID(),
 				Power: 100,
 				Position: Vector{
-					X: &e.Position.X,
-					Y: &e.Position.Y,
+					X: e.Position.X,
+					Y: e.Position.Y,
 				},
 			}
 		}
@@ -278,8 +294,8 @@ func GetGame(start int, limit int) Game {
 		currentBomb = BombState{
 			Planted: false,
 			Position: Vector{
-				X: nil,
-				Y: nil,
+				X: 0,
+				Y: 0,
 			},
 		}
 	})
@@ -296,8 +312,8 @@ func GetGame(start int, limit int) Game {
 		currentBomb = BombState{
 			Planted: true,
 			Position: Vector{
-				X: &pos.X,
-				Y: &pos.Y,
+				X: pos.X,
+				Y: pos.Y,
 			},
 		}
 	})

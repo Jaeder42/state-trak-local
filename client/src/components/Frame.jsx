@@ -21,7 +21,7 @@ export const Frame = ({ frame }) => {
 
     ctx.fillStyle = team === "CT" ? "#68a3e5" : "#e6f13d";
     if (!alive) {
-      ctx.fillStyle = "#ff0000";
+      ctx.fillStyle = "#515151";
     }
     var rad = (90 - yaw) * (Math.PI / 180);
     var { x, y } = transformPos(position.x, position.y);
@@ -88,6 +88,15 @@ export const Frame = ({ frame }) => {
     ctx.fill();
   };
 
+  const drawProjectile = (ctx, projectile) => {
+      const { x, y } = transformPos(projectile.position.x, projectile.position.y);
+      ctx.fillStyle = "#ffffff";
+      ctx.beginPath();
+      ctx.arc(x, y, 2, 0, 2 * Math.PI);
+      ctx.fill();
+  };
+
+
   const startDrawing = (e) => {
     setIsDrawing(true);
     setLastPos({ x: e.nativeEvent.offsetX, y: e.nativeEvent.offsetY });
@@ -133,6 +142,10 @@ export const Frame = ({ frame }) => {
     frame?.flashes?.map((flash) => {
       drawFlash(context, flash);
     });
+    frame?.grenades?.map((grenade) => {
+      drawProjectile(context, grenade);
+    });
+    
     drawBomb(context, frame?.bombState);
   }, [draw]);
   return (
