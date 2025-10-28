@@ -25,8 +25,7 @@ export const Frame = ({ frame }) => {
     }
     var rad = (90 - yaw) * (Math.PI / 180);
     var { x, y } = transformPos(position.x, position.y);
-    // var x = position.x / 15 + height / 2;
-    // var y = -position.y / 15 + width / 2;
+
     ctx.save();
     ctx.strokeStyle = "#ffffff";
     if (!alive) {
@@ -38,10 +37,6 @@ export const Frame = ({ frame }) => {
     ctx.arc(x, y, 4, 0, 2 * Math.PI);
     ctx.fill();
     if (alive) {
-      // ctx.fillStyle = "#FF0000";
-      // ctx.beginPath();
-      // ctx.arc(x, y, 2, 0, 2 * Math.PI);
-      // ctx.fill();
 
       ctx.fillStyle = "#00FF00";
       ctx.beginPath();
@@ -51,7 +46,6 @@ export const Frame = ({ frame }) => {
       if (firing) {
         ctx.fillStyle = "#FFFFFF";
         ctx.beginPath();
-        // ctx.arc(x, y, 4, 0, 2 * Math.PI);
         ctx.rect(0, -30, 1, 30);
         ctx.fill();
       }
