@@ -71,6 +71,14 @@ export const Frame = ({ frame }) => {
     ctx.arc(x, y, 15, 0, 2 * Math.PI);
     ctx.fill();
   };
+  const drawHe = (ctx, he) => {
+     const { x, y } = transformPos(he.position.x, he.position.y);
+
+    ctx.fillStyle = `rgba(255, 0, 0, ${he.power / 10})`;
+    ctx.beginPath();
+    ctx.arc(x, y, 15, 0, 2 * Math.PI);
+    ctx.fill();
+  }
 
   const drawSmoke = (ctx, smoke) => {
     // TODO DRAW THE SMOKE ON THE MAP
@@ -90,6 +98,13 @@ export const Frame = ({ frame }) => {
       ctx.fill();
   };
 
+  const drawFire = (ctx, fire) => {
+    const { x, y } = transformPos(fire.position.x, fire.position.y);
+    ctx.fillStyle = "#ff9500ff";
+    ctx.beginPath();
+    ctx.arc(x, y, 2, 0, 2 * Math.PI);
+    ctx.fill();
+};
 
   const startDrawing = (e) => {
     setIsDrawing(true);
@@ -138,6 +153,12 @@ export const Frame = ({ frame }) => {
     });
     frame?.grenades?.map((grenade) => {
       drawProjectile(context, grenade);
+    });
+    frame?.fires?.map((fire) => {
+      drawFire(context, fire);
+    });
+    frame?.hes?.map((he) => {
+      drawHe(context, he);
     });
     
     drawBomb(context, frame?.bombState);

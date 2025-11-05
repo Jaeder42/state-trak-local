@@ -5,7 +5,9 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"sort"
 	"strconv"
+	"unicode"
 
 	dem "github.com/markus-wa/demoinfocs-golang/v5/pkg/demoinfocs"
 	"github.com/markus-wa/demoinfocs-golang/v5/pkg/demoinfocs/events"
@@ -16,15 +18,23 @@ import (
 type PlayerState struct {
 	Name     string  `json:"name"`
 	SteamId  string  `json:"steamId"`
-	Kills    int     `json:"kills"`
-	Deaths   int     `json:"deaths"`
-	Assists  int     `json:"assists"`
-	Mvps     int     `json:"mvps"`
 	Position Vector  `json:"position"`
 	Yaw      float32 `json:"yaw"`
 	Team     string  `json:"team"`
 	Firing   bool    `json:"firing"`
 	Alive    bool    `json:"alive"`
+	Blind    bool    `json:"blind"`
+}
+
+type PlayerScoreBoardState struct {
+	Name    string `json:"name"`
+	SteamId string `json:"steamId"`
+	Kills   int    `json:"kills"`
+	Deaths  int    `json:"deaths"`
+	Assists int    `json:"assists"`
+	Mvps    int    `json:"mvps"`
+	Score   int    `json:"score"`
+	Damage  int    `json:"damage"`
 }
 
 type SmokeState struct {
@@ -37,18 +47,23 @@ type Grenade struct {
 }
 
 type FrameState struct {
-	Frame        int           `json:"frame"`
-	CTScore      int           `json:"ctScore"`
-	TScore       int           `json:"tScore"`
-	Time         float64       `json:"time"`
-	PlayerStates []PlayerState `json:"playerStates"`
-	Phase        string        `json:"phase"`
-	Round        int           `json:"round"`
-	BombState    BombState     `json:"bombState"`
-	Smokes       []SmokeState  `json:"smokes"`
-	Flashes      []FlashState  `json:"flashes"`
-	Grenades     []Grenade     `json:"grenades"`
+	Frame        int                     `json:"frame"`
+	CTScore      int                     `json:"ctScore"`
+	TScore       int                     `json:"tScore"`
+	Time         float64                 `json:"time"`
+	PlayerStates []PlayerState           `json:"playerStates"`
+	Phase        string                  `json:"phase"`
+	Round        int                     `json:"round"`
+	BombState    BombState               `json:"bombState"`
+	Smokes       []SmokeState            `json:"smokes"`
+	Flashes      []FlashState            `json:"flashes"`
+	Grenades     []Grenade               `json:"grenades"`
+	Hes          []HEState               `json:"hes"`
+	Fires        []FireState             `json:"fires"`
+	CTScoreBoard []PlayerScoreBoardState `json:"ctScoreBoard"`
+	TScoreBoard  []PlayerScoreBoardState `json:"tScoreBoard"`
 }
+
 type Player struct {
 	Name    *string `json:"name"`
 	SteamID *string `json:"steamId"`
@@ -63,7 +78,17 @@ type BombState struct {
 	Position Vector `json:"position"`
 }
 
+type FireState struct {
+	Position Vector `json:"position"`
+}
+
 type FlashState struct {
+	ID       int    `json:"id"`
+	Power    int    `json:"power"`
+	Position Vector `json:"position"`
+}
+
+type HEState struct {
 	ID       int    `json:"id"`
 	Power    int    `json:"power"`
 	Position Vector `json:"position"`
@@ -88,6 +113,42 @@ type Vector struct {
 	Y float64 `json:"y"`
 }
 
+func sortTeamScoreBoard(a, b PlayerScoreBoardState) bool {
+	if a.Damage == b.Damage {
+		iRunes := []rune(a.Name)
+		jRunes := []rune(b.Name)
+
+		max := len(iRunes)
+		if max > len(jRunes) {
+			max = len(jRunes)
+		}
+
+		for idx := 0; idx < max; idx++ {
+			ir := iRunes[idx]
+			jr := jRunes[idx]
+
+			lir := unicode.ToLower(ir)
+			ljr := unicode.ToLower(jr)
+
+			if lir != ljr {
+				return lir < ljr
+			}
+
+			// the lowercase runes are the same, so compare the original
+			if ir != jr {
+				return ir < jr
+			}
+		}
+
+		// If the strings are the same up to the length of the shortest string,
+		// the shorter string comes first
+		return len(iRunes) < len(jRunes)
+	}
+
+	return a.Damage > b.Damage
+
+}
+
 func GetGame(start int, limit int) Game {
 	f, err := os.Open("./test.dem")
 	if err != nil {
@@ -106,6 +167,7 @@ func GetGame(start int, limit int) Game {
 	var currentRound = 0
 	smokes := map[int]SmokeState{}
 	flashes := map[int]FlashState{}
+	hes := map[int]HEState{}
 	tScore := -1
 	ctScore := -1
 
@@ -143,14 +205,11 @@ func GetGame(start int, limit int) Game {
 				}
 
 				var name = element.Name
-				var kills = element.Kills()
-				var deaths = element.Deaths()
-				var assists = element.Assists()
-				var mvps = element.MVPs()
 				var steamId = strconv.FormatUint(element.SteamID64, 10)
 				var alive = element.IsAlive() && element.Health() > 0
 				var yaw = element.ViewDirectionX()
 				var elementPosition = element.Position()
+				var blind = element.IsBlinded()
 
 				element.ViewDirectionX()
 
@@ -162,16 +221,13 @@ func GetGame(start int, limit int) Game {
 				playerStates = append(playerStates,
 					PlayerState{
 						Name:     name,
-						Kills:    kills,
-						Deaths:   deaths,
-						Assists:  assists,
-						Mvps:     mvps,
 						SteamId:  steamId,
 						Position: position,
 						Yaw:      yaw,
 						Team:     team,
 						Firing:   firingNow,
 						Alive:    alive,
+						Blind:    blind,
 					})
 			}
 			var phase = "PAUSED"
@@ -207,9 +263,33 @@ func GetGame(start int, limit int) Game {
 				}
 				flashArray = append(flashArray, v)
 			}
+			var fires []FireState
+
+			for _, v := range p.GameState().Infernos() {
+				for _, fire := range v.Fires().List() {
+					if fire.IsBurning {
+						fires = append(fires, FireState{
+							Position: Vector{
+								X: fire.X,
+								Y: fire.Y,
+							},
+						})
+					}
+				}
+			}
+			var heArray []HEState
+			for _, v := range hes {
+				v.Power -= 1
+				hes[v.ID] = v
+				if v.Power <= 0 {
+					continue
+				}
+				heArray = append(heArray, v)
+			}
 
 			var grenades []Grenade
 			for _, v := range p.GameState().GrenadeProjectiles() {
+
 				grenades = append(grenades, Grenade{
 					Position: Vector{
 						X: v.Position().X,
@@ -217,6 +297,41 @@ func GetGame(start int, limit int) Game {
 					},
 				})
 			}
+
+			var ctScores []PlayerScoreBoardState
+			for _, v := range p.GameState().TeamCounterTerrorists().Members() {
+				ctScores = append(ctScores, PlayerScoreBoardState{
+					Name:    v.Name,
+					SteamId: strconv.FormatUint(v.SteamID64, 10),
+					Kills:   v.Kills(),
+					Deaths:  v.Deaths(),
+					Assists: v.Assists(),
+					Mvps:    v.MVPs(),
+					Score:   v.Score(),
+					Damage:  v.TotalDamage(),
+				})
+			}
+			var tScores []PlayerScoreBoardState
+
+			for _, v := range p.GameState().TeamTerrorists().Members() {
+				tScores = append(tScores, PlayerScoreBoardState{
+					Name:    v.Name,
+					SteamId: strconv.FormatUint(v.SteamID64, 10),
+					Kills:   v.Kills(),
+					Deaths:  v.Deaths(),
+					Assists: v.Assists(),
+					Mvps:    v.MVPs(),
+					Score:   v.Score(),
+					Damage:  v.TotalDamage(),
+				})
+			}
+			sort.Slice(ctScores, func(i, j int) bool {
+				return sortTeamScoreBoard(ctScores[i], ctScores[j])
+
+			})
+			sort.Slice(tScores, func(i, j int) bool {
+				return sortTeamScoreBoard(tScores[i], tScores[j])
+			})
 
 			frames = append(frames, FrameState{
 				Frame:        currentFrame,
@@ -227,9 +342,13 @@ func GetGame(start int, limit int) Game {
 				BombState:    currentBomb,
 				Smokes:       smokesArray,
 				Flashes:      flashArray,
+				Hes:          heArray,
 				CTScore:      ctScore,
 				TScore:       tScore,
 				Grenades:     grenades,
+				Fires:        fires,
+				CTScoreBoard: ctScores,
+				TScoreBoard:  tScores,
 			})
 			rounds[round].Frames = frames
 
@@ -237,7 +356,7 @@ func GetGame(start int, limit int) Game {
 	})
 	p.RegisterEventHandler(func(e events.AnnouncementMatchStarted) {
 		gameStartFrame = p.CurrentFrame()
-		fmt.Println(p.GameState().TeamTerrorists().Members())
+		// fmt.Println(p.GameState().TeamTerrorists().Members())
 
 	})
 	p.RegisterEventHandler(func(e events.PlayerConnect) {
@@ -267,8 +386,21 @@ func GetGame(start int, limit int) Game {
 			// fmt.Println(len(smokes))
 		}
 	})
+
+	p.RegisterEventHandler(func(e events.HeExplode) {
+		if e.Grenade != nil && e.Grenade.Entity != nil {
+			hes[e.Grenade.Entity.ID()] = HEState{
+				ID:    e.Grenade.Entity.ID(),
+				Power: 10,
+				Position: Vector{
+					X: e.Position.X,
+					Y: e.Position.Y,
+				},
+			}
+		}
+	})
+
 	p.RegisterEventHandler(func(e events.FlashExplode) {
-		fmt.Println("Flash popped! ")
 		if e.Grenade != nil && e.Grenade.Entity != nil {
 
 			flashes[e.Grenade.Entity.ID()] = FlashState{
@@ -356,7 +488,8 @@ func GetGame(start int, limit int) Game {
 		Players:   game.Players,
 	}
 	fmt.Println("Parsed game")
-	for _, round := range game.Rounds {
+	for i, round := range game.Rounds {
+		fmt.Println(i, '/', len(game.Rounds))
 		roundJson, err := json.Marshal(round)
 		err = os.WriteFile("./server/data/output/"+strconv.Itoa(*round.Round)+".json", roundJson, 0644)
 		if err != nil {

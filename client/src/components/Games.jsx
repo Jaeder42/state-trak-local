@@ -1,5 +1,6 @@
-import React, { useState, useEffect } from "react";
+import React, { useEffect, useState } from "react";
 import { Frame } from "./Frame.jsx";
+import { ScoreBoard } from "./ScoreBoard.jsx";
 
 export const Games = () => {
   const [output, setOutput] = useState({});
@@ -14,7 +15,6 @@ export const Games = () => {
       const meta = await fetch("http://localhost:3001/output");
       const json = await meta.json();
       setMetaData(json);
-      console.log({ json });
     } catch (err) {
       console.error(err);
     }
@@ -63,9 +63,7 @@ export const Games = () => {
   return (
     <div>
       <h1>{metaData.map}</h1>
-      {loading ? (
-        <div>...loading</div>
-      ) : (
+      {loading ? <div>...loading</div> : (
         <>
           <div
             style={{
@@ -73,11 +71,9 @@ export const Games = () => {
             }}
           >
             <Frame
-              frame={
-                output.frames
-                  ? output.frames[Math.min(index, output.frames?.length - 1)]
-                  : null
-              }
+              frame={output.frames
+                ? output.frames[Math.min(index, output.frames?.length - 1)]
+                : null}
             />
           </div>
           <div className="controls ">
@@ -99,12 +95,10 @@ export const Games = () => {
               </div>
             </div>
           </div>
-          {/* <p>{
-            output.frames
-                  ? JSON.stringify(output.frames[Math.min(index, output.frames?.length - 1)]?.playerStates[0])
-                  : 'null'
-          }</p> */}
-          <p>{JSON.stringify(metaData)}</p>
+
+          {output.frames && (
+            <ScoreBoard frame={output.frames[index]}/>
+          )}
         </>
       )}
     </div>
