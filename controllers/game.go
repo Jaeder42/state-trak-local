@@ -24,6 +24,7 @@ type PlayerState struct {
 	Firing   bool    `json:"firing"`
 	Alive    bool    `json:"alive"`
 	Blind    bool    `json:"blind"`
+	Weapon   string  `json:"weapon"`
 }
 
 type PlayerScoreBoardState struct {
@@ -35,6 +36,7 @@ type PlayerScoreBoardState struct {
 	Mvps    int    `json:"mvps"`
 	Score   int    `json:"score"`
 	Damage  int    `json:"damage"`
+	Weapon  string `json:"weapon"`
 }
 
 type SmokeState struct {
@@ -217,7 +219,12 @@ func GetGame(start int, limit int) Game {
 					X: elementPosition.X,
 					Y: elementPosition.Y,
 				}
-
+				var weapon = ""
+				if element.ActiveWeapon() == nil {
+					weapon = "None"
+				} else {
+					weapon = element.ActiveWeapon().String()
+				}
 				playerStates = append(playerStates,
 					PlayerState{
 						Name:     name,
@@ -228,6 +235,7 @@ func GetGame(start int, limit int) Game {
 						Firing:   firingNow,
 						Alive:    alive,
 						Blind:    blind,
+						Weapon:   weapon,
 					})
 			}
 			var phase = "PAUSED"
@@ -300,6 +308,12 @@ func GetGame(start int, limit int) Game {
 
 			var ctScores []PlayerScoreBoardState
 			for _, v := range p.GameState().TeamCounterTerrorists().Members() {
+				var weapon = ""
+				if v.ActiveWeapon() == nil {
+					weapon = "None"
+				} else {
+					weapon = v.ActiveWeapon().String()
+				}
 				ctScores = append(ctScores, PlayerScoreBoardState{
 					Name:    v.Name,
 					SteamId: strconv.FormatUint(v.SteamID64, 10),
@@ -309,11 +323,18 @@ func GetGame(start int, limit int) Game {
 					Mvps:    v.MVPs(),
 					Score:   v.Score(),
 					Damage:  v.TotalDamage(),
+					Weapon:  weapon,
 				})
 			}
 			var tScores []PlayerScoreBoardState
 
 			for _, v := range p.GameState().TeamTerrorists().Members() {
+				var weapon = ""
+				if v.ActiveWeapon() == nil {
+					weapon = "None"
+				} else {
+					weapon = v.ActiveWeapon().String()
+				}
 				tScores = append(tScores, PlayerScoreBoardState{
 					Name:    v.Name,
 					SteamId: strconv.FormatUint(v.SteamID64, 10),
@@ -323,6 +344,7 @@ func GetGame(start int, limit int) Game {
 					Mvps:    v.MVPs(),
 					Score:   v.Score(),
 					Damage:  v.TotalDamage(),
+					Weapon:  weapon,
 				})
 			}
 			sort.Slice(ctScores, func(i, j int) bool {

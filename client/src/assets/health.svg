@@ -1,0 +1,11 @@
+
+    <svg width="100%" height="100%" viewBox="0 0 24 24" version="1.1" xmlns="http://www.w3.org/2000/svg" fill="#fff">
+        <g id="States" stroke="none" stroke-width="1">
+            <g id="2560x1440_2" transform="translate(-1965.000000, -811.000000)">
+                <path 
+                    fill="fill"
+                    d="M1973,819 L1973,811 L1981,811 L1981,819 L1989,819 L1989,827 L1981,827 L1981,835 L1973,835 L1973,827 L1965,827 L1965,819 L1973,819 Z" id="health"
+                />
+            </g>
+        </g>
+    </svg>
