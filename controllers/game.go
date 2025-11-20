@@ -148,7 +148,6 @@ func sortTeamScoreBoard(a, b PlayerScoreBoardState) bool {
 	}
 
 	return a.Damage > b.Damage
-
 }
 
 func GetGame(start int, limit int) Game {
@@ -166,14 +165,14 @@ func GetGame(start int, limit int) Game {
 
 	var gameStartFrame int
 	var rounds []Round
-	var currentRound = 0
+	currentRound := 0
 	smokes := map[int]SmokeState{}
 	flashes := map[int]FlashState{}
 	hes := map[int]HEState{}
 	tScore := -1
 	ctScore := -1
 
-	var currentBomb = BombState{
+	currentBomb := BombState{
 		Planted: false,
 		Position: Vector{
 			X: 0,
@@ -183,14 +182,13 @@ func GetGame(start int, limit int) Game {
 
 	var firing []uint64
 	p.RegisterEventHandler(func(e events.FrameDone) {
-
 		if p.CurrentFrame()%1 == 0 {
 			// TODO get state for all players at any frame
-			var participants = p.GameState().Participants().Playing()
+			participants := p.GameState().Participants().Playing()
 			var playerStates []PlayerState
 			for _, element := range participants {
-				var team = ""
-				var firingNow = false
+				team := ""
+				firingNow := false
 				teamId := element.TeamState.Team()
 				if teamId == 2 {
 					team = "T"
@@ -206,20 +204,20 @@ func GetGame(start int, limit int) Game {
 					firingNow = true
 				}
 
-				var name = element.Name
-				var steamId = strconv.FormatUint(element.SteamID64, 10)
-				var alive = element.IsAlive() && element.Health() > 0
-				var yaw = element.ViewDirectionX()
-				var elementPosition = element.Position()
-				var blind = element.IsBlinded()
+				name := element.Name
+				steamId := strconv.FormatUint(element.SteamID64, 10)
+				alive := element.IsAlive() && element.Health() > 0
+				yaw := element.ViewDirectionX()
+				elementPosition := element.Position()
+				blind := element.IsBlinded()
 
 				element.ViewDirectionX()
 
-				var position = Vector{
+				position := Vector{
 					X: elementPosition.X,
 					Y: elementPosition.Y,
 				}
-				var weapon = ""
+				weapon := ""
 				if element.ActiveWeapon() == nil {
 					weapon = "None"
 				} else {
@@ -238,14 +236,14 @@ func GetGame(start int, limit int) Game {
 						Weapon:   weapon,
 					})
 			}
-			var phase = "PAUSED"
+			phase := "PAUSED"
 			firing = []uint64{}
 			if p.GameState().GamePhase() == 2 {
 				phase = "LIVE"
 			}
-			var currentFrame = p.CurrentFrame()
-			var currentTime = p.CurrentTime().Seconds()
-			var round = currentRound // p.GameState().TotalRoundsPlayed()
+			currentFrame := p.CurrentFrame()
+			currentTime := p.CurrentTime().Seconds()
+			round := currentRound // p.GameState().TotalRoundsPlayed()
 
 			tScore = p.GameState().TeamTerrorists().Score()
 			ctScore = p.GameState().TeamCounterTerrorists().Score()
@@ -255,7 +253,7 @@ func GetGame(start int, limit int) Game {
 					Round: &round,
 				})
 			}
-			var frames = rounds[round].Frames
+			frames := rounds[round].Frames
 
 			var smokesArray []SmokeState
 			for _, v := range smokes {
@@ -297,7 +295,6 @@ func GetGame(start int, limit int) Game {
 
 			var grenades []Grenade
 			for _, v := range p.GameState().GrenadeProjectiles() {
-
 				grenades = append(grenades, Grenade{
 					Position: Vector{
 						X: v.Position().X,
@@ -308,7 +305,7 @@ func GetGame(start int, limit int) Game {
 
 			var ctScores []PlayerScoreBoardState
 			for _, v := range p.GameState().TeamCounterTerrorists().Members() {
-				var weapon = ""
+				weapon := ""
 				if v.ActiveWeapon() == nil {
 					weapon = "None"
 				} else {
@@ -329,7 +326,7 @@ func GetGame(start int, limit int) Game {
 			var tScores []PlayerScoreBoardState
 
 			for _, v := range p.GameState().TeamTerrorists().Members() {
-				var weapon = ""
+				weapon := ""
 				if v.ActiveWeapon() == nil {
 					weapon = "None"
 				} else {
@@ -349,7 +346,6 @@ func GetGame(start int, limit int) Game {
 			}
 			sort.Slice(ctScores, func(i, j int) bool {
 				return sortTeamScoreBoard(ctScores[i], ctScores[j])
-
 			})
 			sort.Slice(tScores, func(i, j int) bool {
 				return sortTeamScoreBoard(tScores[i], tScores[j])
@@ -379,10 +375,9 @@ func GetGame(start int, limit int) Game {
 	p.RegisterEventHandler(func(e events.AnnouncementMatchStarted) {
 		gameStartFrame = p.CurrentFrame()
 		// fmt.Println(p.GameState().TeamTerrorists().Members())
-
 	})
 	p.RegisterEventHandler(func(e events.PlayerConnect) {
-		var steamId = strconv.FormatUint(e.Player.SteamID64, 10)
+		steamId := strconv.FormatUint(e.Player.SteamID64, 10)
 		players = append(players, Player{
 			Name:    &e.Player.Name,
 			SteamID: &steamId,
@@ -424,7 +419,6 @@ func GetGame(start int, limit int) Game {
 
 	p.RegisterEventHandler(func(e events.FlashExplode) {
 		if e.Grenade != nil && e.Grenade.Entity != nil {
-
 			flashes[e.Grenade.Entity.ID()] = FlashState{
 				ID:    e.Grenade.Entity.ID(),
 				Power: 100,
@@ -438,7 +432,6 @@ func GetGame(start int, limit int) Game {
 	p.RegisterEventHandler(func(e events.RoundStart) {
 		// fmt.Println("New round ------------------------------------------------------ ")
 		currentRound = p.GameState().TotalRoundsPlayed() + 1
-
 	})
 	p.RegisterEventHandler(func(e events.RoundEnd) {
 		// fmt.Println("Round ended ------------------------------------------------------ ")
@@ -462,7 +455,7 @@ func GetGame(start int, limit int) Game {
 	})
 	p.RegisterEventHandler(func(e events.BombPlanted) {
 		// fmt.Printf("%s Planted the bomb \n", e.BombEvent.Player.Position())
-		var pos = e.BombEvent.Player.Position()
+		pos := e.BombEvent.Player.Position()
 		currentBomb = BombState{
 			Planted: true,
 			Position: Vector{
@@ -494,16 +487,16 @@ func GetGame(start int, limit int) Game {
 	err = p.ParseToEnd()
 	fmt.Println(err)
 	fmt.Println(mapName)
-	var frameRate int = 60 //int(p.Header().PlaybackFrames / int(p.Header().PlaybackTime.Seconds()))
-	var game = Game{
+	frameRate := 60 // int(p.Header().PlaybackFrames / int(p.Header().PlaybackTime.Seconds()))
+	game := Game{
 		Players: players,
-		Map:     mapName, //p.Header().MapName,
+		Map:     mapName, // p.Header().MapName,
 		// Frames:  frames[start:lastFrame],
 		Rounds:         rounds,
 		GameStartFrame: gameStartFrame,
 		FrameRate:      frameRate,
 	}
-	var gameModel = Game{
+	gameModel := Game{
 		Map:       game.Map,
 		FrameRate: game.FrameRate,
 		Rounds:    game.Rounds,
