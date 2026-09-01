@@ -10,6 +10,7 @@ import (
 	"unicode"
 
 	dem "github.com/markus-wa/demoinfocs-golang/v5/pkg/demoinfocs"
+	"github.com/markus-wa/demoinfocs-golang/v5/pkg/demoinfocs/common"
 	"github.com/markus-wa/demoinfocs-golang/v5/pkg/demoinfocs/events"
 	"github.com/markus-wa/demoinfocs-golang/v5/pkg/demoinfocs/msg"
 	"golang.org/x/exp/slices"
@@ -99,6 +100,7 @@ type HEState struct {
 type Round struct {
 	Round  *int         `json:"round"`
 	Frames []FrameState `json:"frames"`
+	Winner string       `json:"winner"`
 }
 
 type Game struct {
@@ -108,6 +110,7 @@ type Game struct {
 	GameStartFrame int          `json:"gameStartFrame"`
 	FrameRate      int          `json:"frameRate"`
 	Rounds         []Round      `json:"rounds"`
+	RoundCount     int          `json:"roundCount"`
 }
 
 type Vector struct {
@@ -151,7 +154,11 @@ func sortTeamScoreBoard(a, b PlayerScoreBoardState) bool {
 }
 
 func GetGame(start int, limit int) Game {
-	f, err := os.Open("./test.dem")
+	return ParseDemo("local", "./test.dem")
+}
+
+func ParseDemo(demoId string, filePath string) Game {
+	f, err := os.Open(filePath)
 	if err != nil {
 		log.Panic("failed to open demo file: ", err)
 	}
@@ -436,6 +443,16 @@ func GetGame(start int, limit int) Game {
 	p.RegisterEventHandler(func(e events.RoundEnd) {
 		// fmt.Println("Round ended ------------------------------------------------------ ")
 
+		winner := ""
+		if e.Winner == common.TeamTerrorists {
+			winner = "T"
+		} else if e.Winner == common.TeamCounterTerrorists {
+			winner = "CT"
+		}
+		if currentRound >= 0 && currentRound < len(rounds) {
+			rounds[currentRound].Winner = winner
+		}
+
 		smokes = map[int]SmokeState{}
 		flashes = map[int]FlashState{}
 		currentBomb = BombState{
@@ -495,18 +512,22 @@ func GetGame(start int, limit int) Game {
 		Rounds:         rounds,
 		GameStartFrame: gameStartFrame,
 		FrameRate:      frameRate,
+		RoundCount:     len(rounds),
 	}
 	gameModel := Game{
-		Map:       game.Map,
-		FrameRate: game.FrameRate,
-		Rounds:    game.Rounds,
-		Players:   game.Players,
+		Map:        game.Map,
+		FrameRate:  game.FrameRate,
+		Rounds:     game.Rounds,
+		Players:    game.Players,
+		RoundCount: game.RoundCount,
 	}
 	fmt.Println("Parsed game")
+	outDir := "./controllers/data/output/" + demoId
+	os.MkdirAll(outDir, 0755)
 	for i, round := range game.Rounds {
 		fmt.Println(i, '/', len(game.Rounds))
 		roundJson, err := json.Marshal(round)
-		err = os.WriteFile("./server/data/output/"+strconv.Itoa(*round.Round)+".json", roundJson, 0644)
+		err = os.WriteFile(outDir+"/"+strconv.Itoa(*round.Round)+".json", roundJson, 0644)
 		if err != nil {
 			log.Panic("Something went wrong: ", err)
 		}
@@ -515,7 +536,7 @@ func GetGame(start int, limit int) Game {
 	game.Rounds = nil
 	jsonObj, err := json.Marshal(game)
 
-	err = os.WriteFile("./server/data/output/output.json", jsonObj, 0644)
+	err = os.WriteFile(outDir+"/output.json", jsonObj, 0644)
 	if err != nil {
 		log.Panic("failed to parse demo: ", err)
 	}

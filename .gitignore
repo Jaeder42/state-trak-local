@@ -3,3 +3,5 @@ teamtes.dem
 node_modules
 server/data/output/*.json
 *.dem
+controllers/data/output/
+controllers/data/uploads/

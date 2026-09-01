@@ -1,21 +1,78 @@
 import React, { useRef, useEffect, useState } from "react";
-const anubis = require("../maps/De_anubis_radar.webp");
-const ancient = require("../maps/Ancient_Radar.webp");
+import { MAPS, RADAR_NATIVE_SIZE } from "../maps/config";
 
-export const Frame = ({ frame }) => {
+const clamp = (v, min, max) => Math.min(max, Math.max(min, v));
+
+export const Frame = ({ frame, mapName, focusPlayer }) => {
   const canvasRef = useRef(null);
-  const drawingCanvasRef = useRef(null);
-  const [isDrawing, setIsDrawing] = useState(false);
-  const [lastPos, setLastPos] = useState({ x: 0, y: 0 });
-  const [drawColor, setDrawColor] = useState("#FF0000"); // Set initial color to red
-  const height = 500;
-  const width = 500;
-  const transformPos = (posX, posY) => {
+  const containerRef = useRef(null);
+  const wrapperRef = useRef(null);
+  const [imgSize, setImgSize] = useState({ width: 1024, height: 1024 });
+  const [displaySize, setDisplaySize] = useState({ width: 500, height: 500 });
+  const [view, setView] = useState({ zoom: 1, offsetX: 0, offsetY: 0 });
+  const [focusZoom, setFocusZoom] = useState(2.5);
+  const imgRef = useRef(null);
+  const pinchRef = useRef(null);
+  const dragRef = useRef(null);
+
+  const map = MAPS[mapName] || MAPS.de_ancient;
+
+  useEffect(() => {
+    const img = new Image();
+    img.onload = () => {
+      imgRef.current = img;
+      setImgSize({ width: img.naturalWidth, height: img.naturalHeight });
+    };
+    img.src = map.image;
+  }, [map.image]);
+
+  useEffect(() => {
+    const el = wrapperRef.current;
+    if (!el) return;
+    const update = () => {
+      const width = el.clientWidth || window.innerWidth - 40;
+      const height = window.innerHeight - 200;
+      setDisplaySize({ width, height });
+    };
+    update();
+    const ro = new ResizeObserver(update);
+    ro.observe(el);
+    window.addEventListener("resize", update);
+    return () => {
+      ro.disconnect();
+      window.removeEventListener("resize", update);
+    };
+  }, []);
+
+  const cover = () => {
+    const scale = Math.min(
+      displaySize.width / imgSize.width,
+      displaySize.height / imgSize.height,
+    );
     return {
-      x: posX / 10 + width / 2 + 40,
-      y: -posY / 10 + height / 2 - 40,
+      scale,
+      offsetX: (displaySize.width - imgSize.width * scale) / 2,
+      offsetY: (displaySize.height - imgSize.height * scale) / 2,
     };
   };
+
+  const transformPos = (posX, posY) => {
+    const nativeScale = RADAR_NATIVE_SIZE / imgSize.width;
+    const ix = (posX - map.posX) / map.scale / nativeScale;
+    const iy = (map.posY - posY) / map.scale / nativeScale;
+    const { scale, offsetX, offsetY } = cover();
+    return {
+      x: ix * scale + offsetX,
+      y: iy * scale + offsetY,
+    };
+  };
+
+  const worldRadiusToPixels = (worldRadius) => {
+    const nativeScale = RADAR_NATIVE_SIZE / imgSize.width;
+    const { scale } = cover();
+    return (worldRadius / map.scale / nativeScale) * scale;
+  };
+
   const draw = (ctx, player) => {
     const { position, alive, team, firing, yaw, name } = player;
 
@@ -37,7 +94,6 @@ export const Frame = ({ frame }) => {
     ctx.arc(x, y, 4, 0, 2 * Math.PI);
     ctx.fill();
     if (alive) {
-
       ctx.fillStyle = "#00FF00";
       ctx.beginPath();
       ctx.translate(x, y);
@@ -63,7 +119,7 @@ export const Frame = ({ frame }) => {
       ctx.fill();
     }
   };
-    const drawFlash = (ctx, flash) => {
+  const drawFlash = (ctx, flash) => {
     const { x, y } = transformPos(flash.position.x, flash.position.y);
 
     ctx.fillStyle = `rgba(255, 255, 255, ${flash.power / 100})`;
@@ -72,30 +128,33 @@ export const Frame = ({ frame }) => {
     ctx.fill();
   };
   const drawHe = (ctx, he) => {
-     const { x, y } = transformPos(he.position.x, he.position.y);
+    const { x, y } = transformPos(he.position.x, he.position.y);
 
     ctx.fillStyle = `rgba(255, 0, 0, ${he.power / 10})`;
     ctx.beginPath();
     ctx.arc(x, y, 15, 0, 2 * Math.PI);
     ctx.fill();
-  }
+  };
 
   const drawSmoke = (ctx, smoke) => {
-    // TODO DRAW THE SMOKE ON THE MAP
     const { x, y } = transformPos(smoke.position.x, smoke.position.y);
+    const radius = worldRadiusToPixels(144);
 
-    ctx.fillStyle = "#4a4a4a";
+    const gradient = ctx.createRadialGradient(x, y, radius * 0.2, x, y, radius);
+    gradient.addColorStop(0, "rgba(180, 180, 180, 0.55)");
+    gradient.addColorStop(1, "rgba(120, 120, 120, 0.15)");
+    ctx.fillStyle = gradient;
     ctx.beginPath();
-    ctx.arc(x, y, 15, 0, 2 * Math.PI);
+    ctx.arc(x, y, radius, 0, 2 * Math.PI);
     ctx.fill();
   };
 
   const drawProjectile = (ctx, projectile) => {
-      const { x, y } = transformPos(projectile.position.x, projectile.position.y);
-      ctx.fillStyle = "#ffffff";
-      ctx.beginPath();
-      ctx.arc(x, y, 2, 0, 2 * Math.PI);
-      ctx.fill();
+    const { x, y } = transformPos(projectile.position.x, projectile.position.y);
+    ctx.fillStyle = "#ffffff";
+    ctx.beginPath();
+    ctx.arc(x, y, 2, 0, 2 * Math.PI);
+    ctx.fill();
   };
 
   const drawFire = (ctx, fire) => {
@@ -104,93 +163,194 @@ export const Frame = ({ frame }) => {
     ctx.beginPath();
     ctx.arc(x, y, 2, 0, 2 * Math.PI);
     ctx.fill();
-};
-
-  const startDrawing = (e) => {
-    setIsDrawing(true);
-    setLastPos({ x: e.nativeEvent.offsetX, y: e.nativeEvent.offsetY });
   };
 
-  const drawOnCanvas = (e) => {
-    if (!isDrawing) return;
-    const ctx = drawingCanvasRef.current.getContext("2d");
-    ctx.strokeStyle = drawColor;
-    ctx.lineWidth = 2;
-    ctx.beginPath();
-    ctx.moveTo(lastPos.x, lastPos.y);
-    ctx.lineTo(e.nativeEvent.offsetX, e.nativeEvent.offsetY);
-    ctx.stroke();
-    setLastPos({ x: e.nativeEvent.offsetX, y: e.nativeEvent.offsetY });
+  const onMouseDown = (e) => {
+    dragRef.current = {
+      x: e.clientX,
+      y: e.clientY,
+      offsetX: view.offsetX,
+      offsetY: view.offsetY,
+    };
   };
 
-  const stopDrawing = () => {
-    setIsDrawing(false);
+  const onMouseMove = (e) => {
+    const d = dragRef.current;
+    if (!d) return;
+    setView((prev) => ({
+      ...prev,
+      offsetX: d.offsetX + (e.clientX - d.x),
+      offsetY: d.offsetY + (e.clientY - d.y),
+    }));
   };
 
-  const clearDrawing = () => {
-    const ctx = drawingCanvasRef.current.getContext("2d");
-    ctx.clearRect(
-      0,
-      0,
-      drawingCanvasRef.current.width,
-      drawingCanvasRef.current.height
-    );
+  const onMouseUp = () => {
+    dragRef.current = null;
+  };
+
+  const onWheel = (e) => {
+    e.preventDefault();
+    const factor = e.deltaY < 0 ? 1.1 : 1 / 1.1;
+    if (focusPlayer) {
+      setFocusZoom((z) => clamp(z * factor, 1, 8));
+      return;
+    }
+    const rect = containerRef.current.getBoundingClientRect();
+    const mx = e.clientX - rect.left;
+    const my = e.clientY - rect.top;
+    setView((prev) => {
+      const zoom = clamp(prev.zoom * factor, 1, 8);
+      return {
+        zoom,
+        offsetX: prev.offsetX + (prev.zoom - zoom) * mx,
+        offsetY: prev.offsetY + (prev.zoom - zoom) * my,
+      };
+    });
+  };
+
+  const touchDist = (a, b) =>
+    Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY);
+
+  const touchMid = (a, b) => ({
+    x: (a.clientX + b.clientX) / 2,
+    y: (a.clientY + b.clientY) / 2,
+  });
+
+  const onTouchStart = (e) => {
+    if (e.touches.length === 2) {
+      pinchRef.current = {
+        mode: "pinch",
+        dist: touchDist(e.touches[0], e.touches[1]),
+        mid: touchMid(e.touches[0], e.touches[1]),
+        zoom: focusPlayer ? focusZoom : view.zoom,
+        offsetX: view.offsetX,
+        offsetY: view.offsetY,
+      };
+    } else if (e.touches.length === 1) {
+      pinchRef.current = {
+        mode: "pan",
+        x: e.touches[0].clientX,
+        y: e.touches[0].clientY,
+        offsetX: view.offsetX,
+        offsetY: view.offsetY,
+      };
+    }
+  };
+
+  const onTouchMove = (e) => {
+    const g = pinchRef.current;
+    if (!g) return;
+    const rect = containerRef.current.getBoundingClientRect();
+    if (g.mode === "pinch" && e.touches.length === 2) {
+      const dist = touchDist(e.touches[0], e.touches[1]);
+      const mid = touchMid(e.touches[0], e.touches[1]);
+      const mx = mid.x - rect.left;
+      const my = mid.y - rect.top;
+      const zoom = clamp((g.zoom * dist) / g.dist, 1, 8);
+      if (focusPlayer) {
+        setFocusZoom(zoom);
+      } else {
+        setView({
+          zoom,
+          offsetX: g.offsetX + (g.zoom - zoom) * mx,
+          offsetY: g.offsetY + (g.zoom - zoom) * my,
+        });
+      }
+    } else if (g.mode === "pan" && e.touches.length === 1) {
+      const dx = e.touches[0].clientX - g.x;
+      const dy = e.touches[0].clientY - g.y;
+      setView({
+        zoom: view.zoom,
+        offsetX: g.offsetX + dx,
+        offsetY: g.offsetY + dy,
+      });
+    }
+  };
+
+  const onTouchEnd = () => {
+    pinchRef.current = null;
   };
 
   useEffect(() => {
     const canvas = canvasRef.current;
     const context = canvas.getContext("2d");
-    context.clearRect(0, 0, context.canvas.width, context.canvas.height);
-    //Our draw come here
-    frame?.playerStates?.map((player) => {
-      draw(context, player);
-    });
-    frame?.smokes?.map((smoke) => {
-      drawSmoke(context, smoke);
-    });
-    frame?.flashes?.map((flash) => {
-      drawFlash(context, flash);
-    });
-    frame?.grenades?.map((grenade) => {
-      drawProjectile(context, grenade);
-    });
-    frame?.fires?.map((fire) => {
-      drawFire(context, fire);
-    });
-    frame?.hes?.map((he) => {
-      drawHe(context, he);
-    });
-    
+    context.clearRect(0, 0, canvas.width, canvas.height);
+
+    const focused = focusPlayer
+      ? frame?.playerStates?.find((p) => p.steamId === focusPlayer)
+      : null;
+
+    context.save();
+    if (focused) {
+      const { x, y } = transformPos(focused.position.x, focused.position.y);
+      context.translate(canvas.width / 2, canvas.height / 2);
+      context.scale(focusZoom, focusZoom);
+      context.translate(-x, -y);
+    } else {
+      context.translate(view.offsetX, view.offsetY);
+      context.scale(view.zoom, view.zoom);
+    }
+
+    if (imgRef.current) {
+      const { scale, offsetX, offsetY } = cover();
+      context.drawImage(
+        imgRef.current,
+        offsetX,
+        offsetY,
+        imgSize.width * scale,
+        imgSize.height * scale,
+      );
+    }
+    frame?.playerStates?.forEach((player) => draw(context, player));
+    frame?.smokes?.forEach((smoke) => drawSmoke(context, smoke));
+    frame?.flashes?.forEach((flash) => drawFlash(context, flash));
+    frame?.grenades?.forEach((grenade) => drawProjectile(context, grenade));
+    frame?.fires?.forEach((fire) => drawFire(context, fire));
+    frame?.hes?.forEach((he) => drawHe(context, he));
     drawBomb(context, frame?.bombState);
-  }, [draw]);
+
+    context.restore();
+  }, [frame, map.image, imgSize, focusPlayer, view, focusZoom, displaySize]);
+
+  useEffect(() => {
+    if (focusPlayer) {
+      setView({ zoom: 1, offsetX: 0, offsetY: 0 });
+      setFocusZoom(2.5);
+    }
+  }, [focusPlayer]);
+
   return (
     <div
-      style={{ display: "flex", flexDirection: "column", alignItems: "center" }}
+      ref={wrapperRef}
+      style={{
+        display: "flex",
+        flexDirection: "column",
+        alignItems: "center",
+        flex: "1 1 auto",
+        minWidth: 0,
+        height: "100%",
+      }}
     >
-      <div>{frame?.frame || "-"}</div>
-      <div>{frame?.round || "-"}</div>
-      <div>{frame?.ctScore || 0} - {frame?.tScore || 0}</div>
-      <div className="stack">
-        <div className="map">
-          <img height={500} width={500} src={ancient} />
-        </div>
-        <div className="canvas">
-          <canvas height={500} width={500} ref={canvasRef} />
-          <canvas
-            height={500}
-            width={500}
-            ref={drawingCanvasRef}
-            onMouseDown={startDrawing}
-            onMouseMove={drawOnCanvas}
-            onMouseUp={stopDrawing}
-            onMouseLeave={stopDrawing}
-            style={{ position: "absolute", top: 0, left: 0 }}
-          />
-        </div>
+      <div
+        className="stack"
+        style={{ height: displaySize.height, width: displaySize.width }}
+        ref={containerRef}
+        onWheel={onWheel}
+        onMouseDown={onMouseDown}
+        onMouseMove={onMouseMove}
+        onMouseUp={onMouseUp}
+        onMouseLeave={onMouseUp}
+        onTouchStart={onTouchStart}
+        onTouchMove={onTouchMove}
+        onTouchEnd={onTouchEnd}
+      >
+        <canvas
+          height={displaySize.height}
+          width={displaySize.width}
+          ref={canvasRef}
+          style={{ cursor: "grab" }}
+        />
       </div>
-      <button className="controls" onClick={clearDrawing}>
-        Clear Drawing
-      </button>
     </div>
   );
 };
