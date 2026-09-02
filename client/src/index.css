@@ -50,6 +50,53 @@ code {
   background-color: #222;
 }
 
+.filter-menu {
+  position: fixed;
+  top: 16px;
+  right: 68px;
+  z-index: 100000;
+}
+
+.filter-toggle {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  border: 1px solid #444;
+  background-color: rgba(17, 17, 17, 0.85);
+  color: #fff;
+  font-size: 18px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.filter-toggle:hover {
+  background-color: #222;
+}
+
+.filter-panel {
+  position: absolute;
+  top: 52px;
+  right: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+  background-color: rgba(17, 17, 17, 0.95);
+  border: 1px solid #333;
+  border-radius: 8px;
+  min-width: 160px;
+}
+
+.filter-panel label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  font-size: 14px;
+}
+
 .row {
   display: flex;
   flex-direction: row;
@@ -177,33 +224,91 @@ code {
   color: #888;
 }
 
+.team-scoreboard {
+  border: 1px solid white;
+  margin: 10px;
+  padding: 10px;
+  border-radius: 10px;
+}
+
+.team-scoreboard table {
+  border-collapse: collapse;
+}
+
+.team-scoreboard th,
+.team-scoreboard td {
+  padding: 4px 8px;
+  text-align: center;
+  white-space: nowrap;
+}
+
+.team-scoreboard th {
+  border-bottom: 1px solid #444;
+}
+
+.empty-row td {
+  height: 24px;
+}
+
 .main-layout {
   display: flex;
   flex-direction: row;
   align-items: stretch;
   justify-content: center;
   gap: 16px;
-  height: calc(100vh - 120px);
+  height: calc(100vh - 60px);
 }
 
-.demo-bar {
+.demo-menu {
+  position: fixed;
+  top: 16px;
+  left: 16px;
+  z-index: 100001;
+}
+
+.demo-menu-toggle {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  border: 1px solid #444;
+  background-color: rgba(17, 17, 17, 0.85);
+  color: #fff;
+  font-size: 20px;
+  cursor: pointer;
   display: flex;
-  flex-direction: row;
   align-items: center;
-  gap: 12px;
-  padding: 12px 16px;
+  justify-content: center;
 }
 
-.demo-bar select {
+.demo-menu-toggle:hover {
+  background-color: #222;
+}
+
+.demo-menu-panel {
+  position: absolute;
+  top: 52px;
+  left: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+  background-color: rgba(17, 17, 17, 0.95);
+  border: 1px solid #333;
+  border-radius: 8px;
+  min-width: 220px;
+}
+
+.demo-menu-panel select {
   background-color: #111;
   color: #fff;
   border: 1px solid #333;
   border-radius: 4px;
   padding: 6px 10px;
   font-size: 14px;
+  width: 100%;
 }
 
-.demo-bar button {
+.demo-menu-panel button {
   background-color: #111;
   color: #fff;
   border: 1px solid #333;
@@ -213,13 +318,22 @@ code {
   cursor: pointer;
 }
 
-.demo-bar button:hover {
+.demo-menu-panel button:hover {
   background-color: #222;
 }
 
-.demo-bar button:disabled {
+.demo-menu-panel button:disabled {
   opacity: 0.5;
   cursor: default;
+}
+
+.demo-menu-panel button.delete-demo {
+  border-color: #a33;
+  color: #f66;
+}
+
+.demo-menu-panel button.delete-demo:hover {
+  background-color: #3a1111;
 }
 
 .empty-state {

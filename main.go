@@ -30,6 +30,7 @@ func main() {
 	router.POST("/upload", controllers.UploadDemo)
 	router.GET("/demos", controllers.ListDemos)
 	router.GET("/demos/:id/status", controllers.GetDemoStatus)
+	router.DELETE("/demos/:id", controllers.DeleteDemo)
 	router.GET("/demos/:id/output", func(c *gin.Context) {
 		c.File("./controllers/data/output/" + c.Param("id") + "/output.json")
 	})

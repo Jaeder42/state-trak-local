@@ -1,8 +1,11 @@
-import React, { useEffect, useState, useRef } from "react";
+import React, { useEffect, useState } from "react";
 import { Frame } from "./Frame.jsx";
 import { ScoreBoardPanel } from "./ScoreBoardPanel.jsx";
 import { Controls } from "./Controls.jsx";
 import { RoundSelector } from "./RoundSelector.jsx";
+import { DemoMenu } from "./DemoMenu.jsx";
+import { FilterMenu } from "./FilterMenu.jsx";
+import { mapDisplayName } from "../maps/config";
 
 const API = "";
 
@@ -19,7 +22,7 @@ export const Games = () => {
   const [rounds, setRounds] = useState([]);
   const [focusPlayer, setFocusPlayer] = useState(null);
   const [uploading, setUploading] = useState(false);
-  const fileInputRef = useRef(null);
+  const [filters, setFilters] = useState({ health: true, names: true });
 
   const fetchDemos = async () => {
     try {
@@ -100,6 +103,24 @@ export const Games = () => {
   const selectPlayer = (steamId) => {
     setFocusPlayer((prev) => (prev === steamId ? null : steamId));
   };
+  const toggleFilter = (key) => {
+    setFilters((prev) => ({ ...prev, [key]: !prev[key] }));
+  };
+
+  const deleteDemo = async (id) => {
+    try {
+      await fetch(`${API}/demos/${id}`, { method: "DELETE" });
+      if (demoId === id) {
+        setDemoId(null);
+        setOutput({});
+        setRounds([]);
+        setMetaData({});
+      }
+      await fetchDemos();
+    } catch (err) {
+      console.error(err);
+    }
+  };
 
   const onUpload = async (e) => {
     const file = e.target.files?.[0];
@@ -162,31 +183,14 @@ export const Games = () => {
 
   return (
     <div>
-      <div className="demo-bar">
-        <select
-          value={demoId || ""}
-          onChange={(e) => setDemoId(e.target.value)}
-        >
-          <option value="" disabled>
-            Select a demo
-          </option>
-          {demos.map((d) => (
-            <option key={d.id} value={d.id}>
-              {d.name} {d.status === "parsing" ? "(parsing…)" : ""}
-            </option>
-          ))}
-        </select>
-        <button onClick={() => fileInputRef.current?.click()} disabled={uploading}>
-          {uploading ? "Uploading…" : "Upload .dem"}
-        </button>
-        <input
-          ref={fileInputRef}
-          type="file"
-          accept=".dem"
-          style={{ display: "none" }}
-          onChange={onUpload}
-        />
-      </div>
+      <DemoMenu
+        demos={demos}
+        demoId={demoId}
+        uploading={uploading}
+        onSelectDemo={setDemoId}
+        onUpload={onUpload}
+        onDeleteDemo={deleteDemo}
+      />
 
       {!demoId ? (
         <div className="empty-state">Upload or select a demo to begin</div>
@@ -194,7 +198,7 @@ export const Games = () => {
         <div>...loading</div>
       ) : (
         <>
-          <h1>{metaData.map}</h1>
+          <h1>{mapDisplayName(metaData.map)}</h1>
           <div className="main-layout">
             <ScoreBoardPanel
               frame={output.frames?.[index]}
@@ -207,9 +211,11 @@ export const Games = () => {
                 ? output.frames[Math.min(index, output.frames?.length - 1)]
                 : null}
               focusPlayer={focusPlayer}
+              filters={filters}
             />
           </div>
           <Controls playing={playing} onTogglePlay={tooglePlay} />
+          <FilterMenu filters={filters} onToggle={toggleFilter} />
 
           <RoundSelector
             rounds={rounds}

@@ -92,6 +92,23 @@ func GetDemoStatus(c *gin.Context) {
 	c.JSON(200, s)
 }
 
+func DeleteDemo(c *gin.Context) {
+	id := c.Param("id")
+	if id == "" {
+		c.JSON(400, gin.H{"error": "missing id"})
+		return
+	}
+
+	demoMu.Lock()
+	delete(demoStatus, id)
+	demoMu.Unlock()
+
+	os.RemoveAll(filepath.Join(outputDir, id))
+	os.Remove(filepath.Join(uploadDir, id+".dem"))
+
+	c.JSON(200, gin.H{"ok": true})
+}
+
 func ListDemos(c *gin.Context) {
 	entries, err := os.ReadDir(outputDir)
 	if err != nil {

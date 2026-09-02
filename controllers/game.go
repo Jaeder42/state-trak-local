@@ -26,6 +26,7 @@ type PlayerState struct {
 	Alive    bool    `json:"alive"`
 	Blind    bool    `json:"blind"`
 	Weapon   string  `json:"weapon"`
+	Health   int     `json:"health"`
 }
 
 type PlayerScoreBoardState struct {
@@ -108,6 +109,7 @@ type Game struct {
 	Map            string       `json:"map"`
 	Frames         []FrameState `json:"frames"`
 	GameStartFrame int          `json:"gameStartFrame"`
+	GameEndFrame   int          `json:"gameEndFrame"`
 	FrameRate      int          `json:"frameRate"`
 	Rounds         []Round      `json:"rounds"`
 	RoundCount     int          `json:"roundCount"`
@@ -171,8 +173,10 @@ func ParseDemo(demoId string, filePath string) Game {
 	var players []Player
 
 	var gameStartFrame int
+	var gameEndFrame int
 	var rounds []Round
-	currentRound := 0
+	currentRound := -1
+	matchStarted := false
 	smokes := map[int]SmokeState{}
 	flashes := map[int]FlashState{}
 	hes := map[int]HEState{}
@@ -241,6 +245,7 @@ func ParseDemo(demoId string, filePath string) Game {
 						Alive:    alive,
 						Blind:    blind,
 						Weapon:   weapon,
+						Health:   element.Health(),
 					})
 			}
 			phase := "PAUSED"
@@ -251,6 +256,10 @@ func ParseDemo(demoId string, filePath string) Game {
 			currentFrame := p.CurrentFrame()
 			currentTime := p.CurrentTime().Seconds()
 			round := currentRound // p.GameState().TotalRoundsPlayed()
+
+			if !matchStarted || round < 0 {
+				return
+			}
 
 			tScore = p.GameState().TeamTerrorists().Score()
 			ctScore = p.GameState().TeamCounterTerrorists().Score()
@@ -383,6 +392,16 @@ func ParseDemo(demoId string, filePath string) Game {
 		gameStartFrame = p.CurrentFrame()
 		// fmt.Println(p.GameState().TeamTerrorists().Members())
 	})
+	p.RegisterEventHandler(func(e events.MatchStart) {
+		gameStartFrame = p.CurrentFrame()
+		// Discard the knife round so the first real round overwrites it.
+		rounds = []Round{}
+		currentRound = -1
+		matchStarted = true
+	})
+	p.RegisterEventHandler(func(e events.AnnouncementWinPanelMatch) {
+		gameEndFrame = p.CurrentFrame()
+	})
 	p.RegisterEventHandler(func(e events.PlayerConnect) {
 		steamId := strconv.FormatUint(e.Player.SteamID64, 10)
 		players = append(players, Player{
@@ -438,7 +457,9 @@ func ParseDemo(demoId string, filePath string) Game {
 	})
 	p.RegisterEventHandler(func(e events.RoundStart) {
 		// fmt.Println("New round ------------------------------------------------------ ")
-		currentRound = p.GameState().TotalRoundsPlayed() + 1
+		if matchStarted {
+			currentRound++
+		}
 	})
 	p.RegisterEventHandler(func(e events.RoundEnd) {
 		// fmt.Println("Round ended ------------------------------------------------------ ")
@@ -511,15 +532,17 @@ func ParseDemo(demoId string, filePath string) Game {
 		// Frames:  frames[start:lastFrame],
 		Rounds:         rounds,
 		GameStartFrame: gameStartFrame,
+		GameEndFrame:   gameEndFrame,
 		FrameRate:      frameRate,
 		RoundCount:     len(rounds),
 	}
 	gameModel := Game{
-		Map:        game.Map,
-		FrameRate:  game.FrameRate,
-		Rounds:     game.Rounds,
-		Players:    game.Players,
-		RoundCount: game.RoundCount,
+		Map:          game.Map,
+		FrameRate:    game.FrameRate,
+		Rounds:       game.Rounds,
+		Players:      game.Players,
+		RoundCount:   game.RoundCount,
+		GameEndFrame: game.GameEndFrame,
 	}
 	fmt.Println("Parsed game")
 	outDir := "./controllers/data/output/" + demoId

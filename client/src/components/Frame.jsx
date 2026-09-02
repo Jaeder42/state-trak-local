@@ -3,7 +3,7 @@ import { MAPS, RADAR_NATIVE_SIZE } from "../maps/config";
 
 const clamp = (v, min, max) => Math.min(max, Math.max(min, v));
 
-export const Frame = ({ frame, mapName, focusPlayer }) => {
+export const Frame = ({ frame, mapName, focusPlayer, filters }) => {
   const canvasRef = useRef(null);
   const containerRef = useRef(null);
   const wrapperRef = useRef(null);
@@ -74,7 +74,7 @@ export const Frame = ({ frame, mapName, focusPlayer }) => {
   };
 
   const draw = (ctx, player) => {
-    const { position, alive, team, firing, yaw, name } = player;
+    const { position, alive, team, firing, yaw, name, health } = player;
 
     ctx.fillStyle = team === "CT" ? "#68a3e5" : "#e6f13d";
     if (!alive) {
@@ -89,7 +89,9 @@ export const Frame = ({ frame, mapName, focusPlayer }) => {
       ctx.strokeStyle = "#939393";
     }
 
-    ctx.strokeText(name, x + 3, y - 3);
+    if (filters.names) {
+      ctx.strokeText(name, x + 3, y - 3);
+    }
     ctx.beginPath();
     ctx.arc(x, y, 4, 0, 2 * Math.PI);
     ctx.fill();
@@ -108,6 +110,19 @@ export const Frame = ({ frame, mapName, focusPlayer }) => {
       ctx.fill();
     }
     ctx.restore();
+
+    if (alive && health != null && filters.health) {
+      const barWidth = 20;
+      const barHeight = 3;
+      const bx = x - barWidth / 2;
+      const by = y - 14;
+      ctx.fillStyle = "rgba(0, 0, 0, 0.6)";
+      ctx.fillRect(bx, by, barWidth, barHeight);
+      const ratio = Math.max(0, Math.min(1, health / 100));
+      ctx.fillStyle =
+        ratio > 0.5 ? "#00cc00" : ratio > 0.25 ? "#ffaa00" : "#ff0000";
+      ctx.fillRect(bx, by, barWidth * ratio, barHeight);
+    }
   };
 
   const drawBomb = (ctx, bomb) => {
@@ -138,7 +153,7 @@ export const Frame = ({ frame, mapName, focusPlayer }) => {
 
   const drawSmoke = (ctx, smoke) => {
     const { x, y } = transformPos(smoke.position.x, smoke.position.y);
-    const radius = worldRadiusToPixels(144);
+    const radius = worldRadiusToPixels(180);
 
     const gradient = ctx.createRadialGradient(x, y, radius * 0.2, x, y, radius);
     gradient.addColorStop(0, "rgba(180, 180, 180, 0.55)");
@@ -310,7 +325,7 @@ export const Frame = ({ frame, mapName, focusPlayer }) => {
     drawBomb(context, frame?.bombState);
 
     context.restore();
-  }, [frame, map.image, imgSize, focusPlayer, view, focusZoom, displaySize]);
+  }, [frame, map.image, imgSize, focusPlayer, view, focusZoom, displaySize, filters]);
 
   useEffect(() => {
     if (focusPlayer) {
