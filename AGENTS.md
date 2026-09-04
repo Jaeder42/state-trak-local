@@ -85,6 +85,10 @@ client        -> fetches /demos/:id/output (metadata), /demos/:id/:round
   reset, the next round inherits `planted: true` for its entire duration.
   If you touch the round lifecycle handlers, re-verify with a demo that has
   a post-round plant (compare `bombState.planted` transitions per round).
+- `bombState` in frames has three states: planted (event-tracked), carried
+  (`GameState().Bomb().Carrier()`, position follows the carrier), dropped
+  (bomb's last position on the ground). Players legitimately toss the C4
+  around at round start — the carrier changing is real, not a bug.
 
 - **CS2 demos have no frame count until the end of the file.** demoinfocs
   `Parser.Progress()` (header-based) is therefore 0 for the whole parse.

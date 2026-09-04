@@ -110,11 +110,11 @@ export const Games = () => {
     });
   };
 
-  // eslint-disable-next-line react-hooks/exhaustive-deps -- tick only closes over output, which is a dep
   useEffect(() => {
     if (!playing) return undefined;
     const inter = setInterval(tick, TICK_MS / speed);
     return () => clearInterval(inter);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- tick only closes over output, which is a dep
   }, [playing, speed, output]);
 
   // Auto-advance to the next round (or stop after the last one).

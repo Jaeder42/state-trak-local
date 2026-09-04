@@ -82,6 +82,7 @@ type Team struct {
 type BombState struct {
 	Planted  bool   `json:"planted"`
 	Position Vector `json:"position"`
+	Carrier  string `json:"carrier,omitempty"` // steam id of the player carrying the C4
 }
 
 type FireState struct {
@@ -363,6 +364,19 @@ func ParseDemo(demoId string, filePath string) Game {
 			})
 		}
 
+		// Full bomb state: planted (event-tracked), carried (follows the
+		// carrier), or dropped (last position on the ground).
+		bombState := currentBomb
+		if !bombState.Planted {
+			if bomb := p.GameState().Bomb(); bomb != nil {
+				pos := bomb.Position()
+				bombState = BombState{Position: Vector{X: pos.X, Y: pos.Y}}
+				if bomb.Carrier != nil {
+					bombState.Carrier = strconv.FormatUint(bomb.Carrier.SteamID64, 10)
+				}
+			}
+		}
+
 		var ctScores []PlayerScoreBoardState
 		for _, v := range p.GameState().TeamCounterTerrorists().Members() {
 			weapon := ""
@@ -417,7 +431,7 @@ func ParseDemo(demoId string, filePath string) Game {
 			PlayerStates: playerStates,
 			Phase:        phase,
 			Round:        round,
-			BombState:    currentBomb,
+			BombState:    bombState,
 			Smokes:       smokesArray,
 			Flashes:      flashArray,
 			Hes:          heArray,

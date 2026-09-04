@@ -42,7 +42,9 @@ Everything else serves the embedded React app (SPA fallback).
 handlers (frame done, round start/end, smoke/flash/HE explode, weapon fire,
 bomb planted, kill, ...) and accumulates per-round `FrameState`s: player
 positions, yaw, health, weapons, scoreboard, smokes/flashes/HEs/fires, grenade
-projectiles, bomb state. Output is written per round (`<round>.json`), which
+projectiles, bomb state. `bombState` tracks the C4 through all its states:
+carried (with the carrier's steam id + position), dropped (last position on
+the ground), and planted. Output is written per round (`<round>.json`), which
 contains the frames, the round winner, and a `kills` array (`KillEvent`:
 attacker/victim names, steam ids, teams, weapon, headshot flag, and the
 victim's death position — the client uses it for the kill feed, kill markers,

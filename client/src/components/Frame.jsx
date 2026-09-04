@@ -241,7 +241,8 @@ export const Frame = ({
   };
 
   const drawBomb = (ctx, bomb) => {
-    if (bomb && bomb.planted) {
+    if (!bomb) return;
+    if (bomb.planted) {
       const { x, y } = transformPos(bomb.position.x, bomb.position.y);
       const s = 7;
       ctx.fillStyle = "#ff2222";
@@ -253,7 +254,36 @@ export const Frame = ({
       ctx.beginPath();
       ctx.arc(x, y, 5 + ph * 18, 0, 2 * Math.PI);
       ctx.stroke();
+      return;
     }
+    if (bomb.carrier) {
+      // orange ring + C4 badge on whoever is carrying the bomb
+      const { x, y } = transformPos(bomb.position.x, bomb.position.y);
+      ctx.save();
+      ctx.strokeStyle = "#ff9500";
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.arc(x, y, 8, 0, 2 * Math.PI);
+      ctx.stroke();
+      ctx.font = "bold 9px sans-serif";
+      ctx.textAlign = "center";
+      ctx.fillStyle = "#ff9500";
+      ctx.fillText("C4", x, y + 19);
+      ctx.restore();
+      return;
+    }
+    // dropped on the ground: blinking orange square (skip if position unknown)
+    if (!bomb.position || (bomb.position.x === 0 && bomb.position.y === 0)) {
+      return;
+    }
+    const { x, y } = transformPos(bomb.position.x, bomb.position.y);
+    const blink = 0.55 + 0.35 * Math.sin((frame ? frame.time : 0) * 4);
+    const s = 7;
+    ctx.fillStyle = `rgba(255, 149, 0, ${blink.toFixed(3)})`;
+    ctx.fillRect(x - s / 2, y - s / 2, s, s);
+    ctx.strokeStyle = "rgba(255, 255, 255, 0.6)";
+    ctx.lineWidth = 1;
+    ctx.strokeRect(x - s / 2, y - s / 2, s, s);
   };
   const drawFlash = (ctx, flash) => {
     const { x, y } = transformPos(flash.position.x, flash.position.y);
@@ -495,6 +525,7 @@ export const Frame = ({
     drawBomb(context, frame?.bombState);
 
     context.restore();
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- draw fns close over state that's already in deps
   }, [
     frame,
     frames,
