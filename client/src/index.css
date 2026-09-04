@@ -84,9 +84,7 @@ code {
 }
 
 .filter-menu {
-  position: fixed;
-  top: 72px;
-  right: 16px;
+  position: relative;
   z-index: 100000;
 }
 

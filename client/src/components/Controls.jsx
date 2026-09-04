@@ -2,9 +2,10 @@ import React from "react";
 
 const SPEEDS = [0.25, 0.5, 1, 2, 4];
 
-export const Controls = ({ playing, onTogglePlay, speed, onSpeedChange }) => {
+export const Controls = ({ playing, onTogglePlay, speed, onSpeedChange, children }) => {
   return (
     <div className="controls-bar">
+      {children}
       <div className="speed-buttons">
         {SPEEDS.map((s) => (
           <button

@@ -316,8 +316,9 @@ export const Games = () => {
             onTogglePlay={tooglePlay}
             speed={speed}
             onSpeedChange={setSpeed}
-          />
-          <FilterMenu filters={filters} onToggle={toggleFilter} />
+          >
+            <FilterMenu filters={filters} onToggle={toggleFilter} />
+          </Controls>
 
           <RoundSelector
             rounds={rounds}
