@@ -3,8 +3,10 @@ package controllers
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"log"
 	"os"
+	"path/filepath"
 	"sort"
 	"strconv"
 	"unicode"
@@ -155,8 +157,18 @@ func sortTeamScoreBoard(a, b PlayerScoreBoardState) bool {
 	return a.Damage > b.Damage
 }
 
-func GetGame(start int, limit int) Game {
-	return ParseDemo("local", "./test.dem")
+// countingReader tracks how many bytes of a demo file have been consumed.
+// CS2 demos don't expose a frame count until the end of the file, so parse
+// progress is reported as a fraction of bytes read instead.
+type countingReader struct {
+	r io.Reader
+	n int64
+}
+
+func (c *countingReader) Read(buf []byte) (int, error) {
+	n, err := c.r.Read(buf)
+	c.n += int64(n)
+	return n, err
 }
 
 func ParseDemo(demoId string, filePath string) Game {
@@ -166,10 +178,14 @@ func ParseDemo(demoId string, filePath string) Game {
 	}
 	defer f.Close()
 
-	p := dem.NewParser(f)
+	fileSize := int64(0)
+	if st, err := f.Stat(); err == nil {
+		fileSize = st.Size()
+	}
+	reader := &countingReader{r: f}
+	p := dem.NewParser(reader)
 	defer p.Close()
 	var mapName string
-	// var frames []*model.FrameState
 	var players []Player
 
 	var gameStartFrame int
@@ -193,200 +209,198 @@ func ParseDemo(demoId string, filePath string) Game {
 
 	var firing []uint64
 	p.RegisterEventHandler(func(e events.FrameDone) {
-		if p.CurrentFrame()%1 == 0 {
-			// TODO get state for all players at any frame
-			participants := p.GameState().Participants().Playing()
-			var playerStates []PlayerState
-			for _, element := range participants {
-				team := ""
-				firingNow := false
-				teamId := element.TeamState.Team()
-				if teamId == 2 {
-					team = "T"
-				}
-				if teamId == 3 {
-					team = "CT"
-				}
-
-				idx := slices.IndexFunc(firing, func(player uint64) bool {
-					return player == element.SteamID64
-				})
-				if idx > -1 {
-					firingNow = true
-				}
-
-				name := element.Name
-				steamId := strconv.FormatUint(element.SteamID64, 10)
-				alive := element.IsAlive() && element.Health() > 0
-				yaw := element.ViewDirectionX()
-				elementPosition := element.Position()
-				blind := element.IsBlinded()
-
-				element.ViewDirectionX()
-
-				position := Vector{
-					X: elementPosition.X,
-					Y: elementPosition.Y,
-				}
-				weapon := ""
-				if element.ActiveWeapon() == nil {
-					weapon = "None"
-				} else {
-					weapon = element.ActiveWeapon().String()
-				}
-				playerStates = append(playerStates,
-					PlayerState{
-						Name:     name,
-						SteamId:  steamId,
-						Position: position,
-						Yaw:      yaw,
-						Team:     team,
-						Firing:   firingNow,
-						Alive:    alive,
-						Blind:    blind,
-						Weapon:   weapon,
-						Health:   element.Health(),
-					})
-			}
-			phase := "PAUSED"
-			firing = []uint64{}
-			if p.GameState().GamePhase() == 2 {
-				phase = "LIVE"
-			}
-			currentFrame := p.CurrentFrame()
-			currentTime := p.CurrentTime().Seconds()
-			round := currentRound // p.GameState().TotalRoundsPlayed()
-
-			if !matchStarted || round < 0 {
-				return
-			}
-
-			tScore = p.GameState().TeamTerrorists().Score()
-			ctScore = p.GameState().TeamCounterTerrorists().Score()
-
-			if len(rounds) <= round {
-				rounds = append(rounds, Round{
-					Round: &round,
-				})
-			}
-			frames := rounds[round].Frames
-
-			var smokesArray []SmokeState
-			for _, v := range smokes {
-				smokesArray = append(smokesArray, v)
-			}
-
-			var flashArray []FlashState
-			for index, v := range flashes {
-				v.Power -= 1
-				flashes[index] = v
-				if v.Power <= 0 {
-					continue
-				}
-				flashArray = append(flashArray, v)
-			}
-			var fires []FireState
-
-			for _, v := range p.GameState().Infernos() {
-				for _, fire := range v.Fires().List() {
-					if fire.IsBurning {
-						fires = append(fires, FireState{
-							Position: Vector{
-								X: fire.X,
-								Y: fire.Y,
-							},
-						})
-					}
-				}
-			}
-			var heArray []HEState
-			for _, v := range hes {
-				v.Power -= 1
-				hes[v.ID] = v
-				if v.Power <= 0 {
-					continue
-				}
-				heArray = append(heArray, v)
-			}
-
-			var grenades []Grenade
-			for _, v := range p.GameState().GrenadeProjectiles() {
-				grenades = append(grenades, Grenade{
-					Position: Vector{
-						X: v.Position().X,
-						Y: v.Position().Y,
-					},
-				})
-			}
-
-			var ctScores []PlayerScoreBoardState
-			for _, v := range p.GameState().TeamCounterTerrorists().Members() {
-				weapon := ""
-				if v.ActiveWeapon() == nil {
-					weapon = "None"
-				} else {
-					weapon = v.ActiveWeapon().String()
-				}
-				ctScores = append(ctScores, PlayerScoreBoardState{
-					Name:    v.Name,
-					SteamId: strconv.FormatUint(v.SteamID64, 10),
-					Kills:   v.Kills(),
-					Deaths:  v.Deaths(),
-					Assists: v.Assists(),
-					Mvps:    v.MVPs(),
-					Score:   v.Score(),
-					Damage:  v.TotalDamage(),
-					Weapon:  weapon,
-				})
-			}
-			var tScores []PlayerScoreBoardState
-
-			for _, v := range p.GameState().TeamTerrorists().Members() {
-				weapon := ""
-				if v.ActiveWeapon() == nil {
-					weapon = "None"
-				} else {
-					weapon = v.ActiveWeapon().String()
-				}
-				tScores = append(tScores, PlayerScoreBoardState{
-					Name:    v.Name,
-					SteamId: strconv.FormatUint(v.SteamID64, 10),
-					Kills:   v.Kills(),
-					Deaths:  v.Deaths(),
-					Assists: v.Assists(),
-					Mvps:    v.MVPs(),
-					Score:   v.Score(),
-					Damage:  v.TotalDamage(),
-					Weapon:  weapon,
-				})
-			}
-			sort.Slice(ctScores, func(i, j int) bool {
-				return sortTeamScoreBoard(ctScores[i], ctScores[j])
-			})
-			sort.Slice(tScores, func(i, j int) bool {
-				return sortTeamScoreBoard(tScores[i], tScores[j])
-			})
-
-			frames = append(frames, FrameState{
-				Frame:        currentFrame,
-				Time:         currentTime,
-				PlayerStates: playerStates,
-				Phase:        phase,
-				Round:        round,
-				BombState:    currentBomb,
-				Smokes:       smokesArray,
-				Flashes:      flashArray,
-				Hes:          heArray,
-				CTScore:      ctScore,
-				TScore:       tScore,
-				Grenades:     grenades,
-				Fires:        fires,
-				CTScoreBoard: ctScores,
-				TScoreBoard:  tScores,
-			})
-			rounds[round].Frames = frames
-
+		if fileSize > 0 {
+			progress := int(float64(reader.n) / float64(fileSize) * 100)
+			updateProgress(demoId, progress, 100)
 		}
+		participants := p.GameState().Participants().Playing()
+		var playerStates []PlayerState
+		for _, element := range participants {
+			team := ""
+			firingNow := false
+			teamId := element.TeamState.Team()
+			if teamId == 2 {
+				team = "T"
+			}
+			if teamId == 3 {
+				team = "CT"
+			}
+
+			idx := slices.IndexFunc(firing, func(player uint64) bool {
+				return player == element.SteamID64
+			})
+			if idx > -1 {
+				firingNow = true
+			}
+
+			name := element.Name
+			steamId := strconv.FormatUint(element.SteamID64, 10)
+			alive := element.IsAlive() && element.Health() > 0
+			yaw := element.ViewDirectionX()
+			elementPosition := element.Position()
+			blind := element.IsBlinded()
+
+			position := Vector{
+				X: elementPosition.X,
+				Y: elementPosition.Y,
+			}
+			weapon := ""
+			if element.ActiveWeapon() == nil {
+				weapon = "None"
+			} else {
+				weapon = element.ActiveWeapon().String()
+			}
+			playerStates = append(playerStates,
+				PlayerState{
+					Name:     name,
+					SteamId:  steamId,
+					Position: position,
+					Yaw:      yaw,
+					Team:     team,
+					Firing:   firingNow,
+					Alive:    alive,
+					Blind:    blind,
+					Weapon:   weapon,
+					Health:   element.Health(),
+				})
+		}
+		phase := "PAUSED"
+		firing = []uint64{}
+		if p.GameState().GamePhase() == 2 {
+			phase = "LIVE"
+		}
+		currentFrame := p.CurrentFrame()
+		currentTime := p.CurrentTime().Seconds()
+		round := currentRound // p.GameState().TotalRoundsPlayed()
+
+		if !matchStarted || round < 0 {
+			return
+		}
+
+		tScore = p.GameState().TeamTerrorists().Score()
+		ctScore = p.GameState().TeamCounterTerrorists().Score()
+
+		if len(rounds) <= round {
+			rounds = append(rounds, Round{
+				Round: &round,
+			})
+		}
+		frames := rounds[round].Frames
+
+		var smokesArray []SmokeState
+		for _, v := range smokes {
+			smokesArray = append(smokesArray, v)
+		}
+
+		var flashArray []FlashState
+		for index, v := range flashes {
+			v.Power -= 1
+			flashes[index] = v
+			if v.Power <= 0 {
+				continue
+			}
+			flashArray = append(flashArray, v)
+		}
+		var fires []FireState
+
+		for _, v := range p.GameState().Infernos() {
+			for _, fire := range v.Fires().List() {
+				if fire.IsBurning {
+					fires = append(fires, FireState{
+						Position: Vector{
+							X: fire.X,
+							Y: fire.Y,
+						},
+					})
+				}
+			}
+		}
+		var heArray []HEState
+		for _, v := range hes {
+			v.Power -= 1
+			hes[v.ID] = v
+			if v.Power <= 0 {
+				continue
+			}
+			heArray = append(heArray, v)
+		}
+
+		var grenades []Grenade
+		for _, v := range p.GameState().GrenadeProjectiles() {
+			grenades = append(grenades, Grenade{
+				Position: Vector{
+					X: v.Position().X,
+					Y: v.Position().Y,
+				},
+			})
+		}
+
+		var ctScores []PlayerScoreBoardState
+		for _, v := range p.GameState().TeamCounterTerrorists().Members() {
+			weapon := ""
+			if v.ActiveWeapon() == nil {
+				weapon = "None"
+			} else {
+				weapon = v.ActiveWeapon().String()
+			}
+			ctScores = append(ctScores, PlayerScoreBoardState{
+				Name:    v.Name,
+				SteamId: strconv.FormatUint(v.SteamID64, 10),
+				Kills:   v.Kills(),
+				Deaths:  v.Deaths(),
+				Assists: v.Assists(),
+				Mvps:    v.MVPs(),
+				Score:   v.Score(),
+				Damage:  v.TotalDamage(),
+				Weapon:  weapon,
+			})
+		}
+		var tScores []PlayerScoreBoardState
+
+		for _, v := range p.GameState().TeamTerrorists().Members() {
+			weapon := ""
+			if v.ActiveWeapon() == nil {
+				weapon = "None"
+			} else {
+				weapon = v.ActiveWeapon().String()
+			}
+			tScores = append(tScores, PlayerScoreBoardState{
+				Name:    v.Name,
+				SteamId: strconv.FormatUint(v.SteamID64, 10),
+				Kills:   v.Kills(),
+				Deaths:  v.Deaths(),
+				Assists: v.Assists(),
+				Mvps:    v.MVPs(),
+				Score:   v.Score(),
+				Damage:  v.TotalDamage(),
+				Weapon:  weapon,
+			})
+		}
+		sort.Slice(ctScores, func(i, j int) bool {
+			return sortTeamScoreBoard(ctScores[i], ctScores[j])
+		})
+		sort.Slice(tScores, func(i, j int) bool {
+			return sortTeamScoreBoard(tScores[i], tScores[j])
+		})
+
+		frames = append(frames, FrameState{
+			Frame:        currentFrame,
+			Time:         currentTime,
+			PlayerStates: playerStates,
+			Phase:        phase,
+			Round:        round,
+			BombState:    currentBomb,
+			Smokes:       smokesArray,
+			Flashes:      flashArray,
+			Hes:          heArray,
+			CTScore:      ctScore,
+			TScore:       tScore,
+			Grenades:     grenades,
+			Fires:        fires,
+			CTScoreBoard: ctScores,
+			TScoreBoard:  tScores,
+		})
+		rounds[round].Frames = frames
 	})
 	p.RegisterEventHandler(func(e events.AnnouncementMatchStarted) {
 		gameStartFrame = p.CurrentFrame()
@@ -522,60 +536,43 @@ func ParseDemo(demoId string, filePath string) Game {
 	})
 
 	// Parse to end
-	err = p.ParseToEnd()
-	fmt.Println(err)
-	fmt.Println(mapName)
+	if err = p.ParseToEnd(); err != nil {
+		log.Println("parse ended with error:", err)
+	}
 	frameRate := 60 // int(p.Header().PlaybackFrames / int(p.Header().PlaybackTime.Seconds()))
 	game := Game{
-		Players: players,
-		Map:     mapName, // p.Header().MapName,
-		// Frames:  frames[start:lastFrame],
+		Players:        players,
+		Map:            mapName,
 		Rounds:         rounds,
 		GameStartFrame: gameStartFrame,
 		GameEndFrame:   gameEndFrame,
 		FrameRate:      frameRate,
 		RoundCount:     len(rounds),
 	}
-	gameModel := Game{
-		Map:          game.Map,
-		FrameRate:    game.FrameRate,
-		Rounds:       game.Rounds,
-		Players:      game.Players,
-		RoundCount:   game.RoundCount,
-		GameEndFrame: game.GameEndFrame,
-	}
 	fmt.Println("Parsed game")
-	outDir := "./controllers/data/output/" + demoId
-	os.MkdirAll(outDir, 0755)
+	outDir := filepath.Join(outputDir, demoId)
+	if err := os.MkdirAll(outDir, 0755); err != nil {
+		log.Panic("failed to create output dir: ", err)
+	}
 	for i, round := range game.Rounds {
-		fmt.Println(i, '/', len(game.Rounds))
+		fmt.Println("round", i+1, "/", len(game.Rounds))
 		roundJson, err := json.Marshal(round)
-		err = os.WriteFile(outDir+"/"+strconv.Itoa(*round.Round)+".json", roundJson, 0644)
 		if err != nil {
-			log.Panic("Something went wrong: ", err)
+			log.Panic("failed to marshal round: ", err)
+		}
+		roundFile := filepath.Join(outDir, strconv.Itoa(*round.Round)+".json")
+		if err := os.WriteFile(roundFile, roundJson, 0644); err != nil {
+			log.Panic("failed to write round file: ", err)
 		}
 	}
 
 	game.Rounds = nil
 	jsonObj, err := json.Marshal(game)
-
-	err = os.WriteFile(outDir+"/output.json", jsonObj, 0644)
 	if err != nil {
-		log.Panic("failed to parse demo: ", err)
+		log.Panic("failed to marshal game: ", err)
 	}
-	return gameModel
-}
-
-func Min(x, y int) int {
-	if x > y {
-		return y
+	if err := os.WriteFile(filepath.Join(outDir, "output.json"), jsonObj, 0644); err != nil {
+		log.Panic("failed to write output file: ", err)
 	}
-	return x
-}
-
-func Max(x, y int) int {
-	if x < y {
-		return y
-	}
-	return x
+	return game
 }

@@ -1,6 +1,7 @@
 package controllers
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -32,8 +33,62 @@ const (
 )
 
 func init() {
-	os.MkdirAll(uploadDir, 0755)
-	os.MkdirAll(outputDir, 0755)
+	if err := os.MkdirAll(uploadDir, 0755); err != nil {
+		panic(err)
+	}
+	if err := os.MkdirAll(outputDir, 0755); err != nil {
+		panic(err)
+	}
+	loadPersistedDemos()
+}
+
+// demoDir returns the output directory for a demo id.
+// filepath.Base guards against path traversal via the id route param.
+func demoDir(id string) string {
+	return filepath.Join(outputDir, filepath.Base(id))
+}
+
+// demoMeta is persisted next to the parse output so demo names survive restarts.
+type demoMeta struct {
+	Name string `json:"name"`
+}
+
+// loadPersistedDemos restores the status of previously parsed demos on startup.
+func loadPersistedDemos() {
+	entries, err := os.ReadDir(outputDir)
+	if err != nil {
+		return
+	}
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			continue
+		}
+		id := entry.Name()
+		s := &DemoStatus{Id: id, Name: id, Status: "done", Progress: 100, Total: 100}
+		if data, err := os.ReadFile(filepath.Join(demoDir(id), "meta.json")); err == nil {
+			var meta demoMeta
+			if json.Unmarshal(data, &meta) == nil && meta.Name != "" {
+				s.Name = meta.Name
+			}
+		}
+		if _, err := os.Stat(filepath.Join(demoDir(id), "output.json")); err != nil {
+			s.Status = "error"
+			s.Error = "parsing incomplete (output.json missing)"
+			s.Progress = 0
+			s.Total = 0
+		}
+		demoStatus[id] = s
+	}
+}
+
+// updateProgress reports parse progress for a demo, if it is being tracked.
+func updateProgress(demoId string, progress int, total int) {
+	demoMu.Lock()
+	defer demoMu.Unlock()
+	if s, ok := demoStatus[demoId]; ok {
+		s.Progress = progress
+		s.Total = total
+	}
 }
 
 func UploadDemo(c *gin.Context) {
@@ -52,6 +107,13 @@ func UploadDemo(c *gin.Context) {
 	if err := c.SaveUploadedFile(file, demoPath); err != nil {
 		c.JSON(500, gin.H{"error": err.Error()})
 		return
+	}
+
+	// Persist the original filename so the demo list survives restarts.
+	if err := os.MkdirAll(demoDir(demoId), 0755); err == nil {
+		if meta, err := json.Marshal(demoMeta{Name: file.Filename}); err == nil {
+			os.WriteFile(filepath.Join(demoDir(demoId), "meta.json"), meta, 0644)
+		}
 	}
 
 	demoMu.Lock()
@@ -74,6 +136,8 @@ func UploadDemo(c *gin.Context) {
 		ParseDemo(demoId, demoPath)
 		demoMu.Lock()
 		demoStatus[demoId].Status = "done"
+		demoStatus[demoId].Progress = 100
+		demoStatus[demoId].Total = 100
 		demoMu.Unlock()
 	}()
 
@@ -92,6 +156,15 @@ func GetDemoStatus(c *gin.Context) {
 	c.JSON(200, s)
 }
 
+func GetOutput(c *gin.Context) {
+	filename := filepath.Join(demoDir(c.Param("id")), "output.json")
+	if _, err := os.Stat(filename); err != nil {
+		c.JSON(404, gin.H{"error": "demo not found"})
+		return
+	}
+	c.File(filename)
+}
+
 func DeleteDemo(c *gin.Context) {
 	id := c.Param("id")
 	if id == "" {
@@ -103,8 +176,8 @@ func DeleteDemo(c *gin.Context) {
 	delete(demoStatus, id)
 	demoMu.Unlock()
 
-	os.RemoveAll(filepath.Join(outputDir, id))
-	os.Remove(filepath.Join(uploadDir, id+".dem"))
+	os.RemoveAll(demoDir(id))
+	os.Remove(filepath.Join(uploadDir, filepath.Base(id)+".dem"))
 
 	c.JSON(200, gin.H{"ok": true})
 }

@@ -20,8 +20,12 @@ func checkErr(err error) {
 
 func GetRound(c *gin.Context) {
 	demoId := c.Param("id")
-	id := c.Param("round")
-	filename := "./controllers/data/output/" + demoId + "/" + id + ".json"
+	round := c.Param("round")
+	filename := filepath.Join(demoDir(demoId), filepath.Base(round)+".json")
+	if _, err := os.Stat(filename); err != nil {
+		c.JSON(404, gin.H{"error": "round not found"})
+		return
+	}
 	c.File(filename)
 }
 
@@ -32,7 +36,7 @@ type RoundSummary struct {
 
 func GetRounds(c *gin.Context) {
 	demoId := c.Param("id")
-	dir := "./controllers/data/output/" + demoId
+	dir := demoDir(demoId)
 	entries, err := os.ReadDir(dir)
 	if err != nil {
 		c.JSON(500, gin.H{"error": err.Error()})

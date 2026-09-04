@@ -1,7 +1,16 @@
-output.json
-teamtes.dem
-node_modules
-server/data/output/*.json
+# Binaries / build output
+statetrak
+state-trak-local
+client/build/
+web/dist/*
+!web/dist/.gitkeep
+
+# Demo files
 *.dem
-controllers/data/output/
-controllers/data/uploads/
+
+# Generated data
+controllers/data/
+node_modules/
+
+# OS junk
+.DS_Store

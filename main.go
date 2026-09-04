@@ -11,11 +11,11 @@ import (
 )
 
 func main() {
-	parse := flag.Bool("parse", false, "parse the demo and write output files")
+	parse := flag.String("parse", "", "parse the given .dem file and exit (writes JSON to controllers/data/output/local)")
 	flag.Parse()
 
-	if *parse {
-		controllers.GetGame(0, 100)
+	if *parse != "" {
+		controllers.ParseDemo("local", *parse)
 		return
 	}
 
@@ -31,15 +31,12 @@ func main() {
 	router.GET("/demos", controllers.ListDemos)
 	router.GET("/demos/:id/status", controllers.GetDemoStatus)
 	router.DELETE("/demos/:id", controllers.DeleteDemo)
-	router.GET("/demos/:id/output", func(c *gin.Context) {
-		c.File("./controllers/data/output/" + c.Param("id") + "/output.json")
-	})
+	router.GET("/demos/:id/output", controllers.GetOutput)
 	router.GET("/demos/:id/rounds", controllers.GetRounds)
 	router.GET("/demos/:id/:round", controllers.GetRound)
 
 	router.NoRoute(web.Handler())
-	err := router.Run(":3001")
-	if err != nil {
+	if err := router.Run(":3001"); err != nil {
 		fmt.Println(err)
 	}
 }
