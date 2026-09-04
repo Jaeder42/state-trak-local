@@ -28,11 +28,44 @@ code {
   z-index: 100000;
 }
 
-.play-toggle {
+.controls-bar {
   position: fixed;
   top: 16px;
   right: 16px;
   z-index: 100000;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.speed-buttons {
+  display: flex;
+  gap: 4px;
+}
+
+.speed-button {
+  height: 44px;
+  padding: 0 10px;
+  border-radius: 22px;
+  border: 1px solid #444;
+  background-color: rgba(17, 17, 17, 0.85);
+  color: #aaa;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.speed-button:hover {
+  background-color: #222;
+}
+
+.speed-button.active {
+  background-color: #68a3e5;
+  color: #000;
+  border-color: #68a3e5;
+  font-weight: bold;
+}
+
+.play-toggle {
   width: 44px;
   height: 44px;
   border-radius: 50%;
@@ -52,8 +85,8 @@ code {
 
 .filter-menu {
   position: fixed;
-  top: 16px;
-  right: 68px;
+  top: 72px;
+  right: 16px;
   z-index: 100000;
 }
 
@@ -151,6 +184,117 @@ code {
   background: #fff;
   border-radius: 50%;
   cursor: pointer;
+}
+
+.timeline-wrap {
+  position: relative;
+  padding: 10px 12px 6px;
+}
+
+.timeline-markers {
+  position: absolute;
+  left: 12px;
+  right: 12px;
+  top: 6px;
+  height: 20px;
+  pointer-events: none;
+}
+
+.tl-kill {
+  position: absolute;
+  top: 0;
+  width: 2px;
+  height: 16px;
+  background: #fff;
+  opacity: 0.9;
+}
+
+.tl-kill.ct {
+  background: #68a3e5;
+}
+
+.tl-kill.t {
+  background: #e6f13d;
+}
+
+.tl-bomb {
+  position: absolute;
+  top: -2px;
+  width: 4px;
+  height: 20px;
+  background: #ff5c00;
+  border-radius: 2px;
+}
+
+.timeline-info {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 2px 12px 6px;
+  font-size: 13px;
+  color: #aaa;
+}
+
+.clock {
+  font-variant-numeric: tabular-nums;
+  color: #fff;
+  font-weight: 600;
+}
+
+.phase-pill,
+.bomb-pill {
+  padding: 2px 10px;
+  border-radius: 10px;
+  font-size: 11px;
+  font-weight: bold;
+}
+
+.phase-pill.live {
+  background-color: #113311;
+  color: #55ff55;
+  border: 1px solid #2c5;
+}
+
+.bomb-pill {
+  background-color: #5a2000;
+  color: #ffb066;
+  border: 1px solid #a33;
+  font-variant-numeric: tabular-nums;
+}
+
+.bomb-pill.urgent {
+  background-color: #8a0000;
+  color: #fff;
+  animation: bomb-blink 1s infinite;
+}
+
+@keyframes bomb-blink {
+  50% {
+    opacity: 0.35;
+  }
+}
+
+.legend {
+  margin-left: auto;
+  display: flex;
+  gap: 10px;
+  font-size: 11px;
+}
+
+.legend-ct {
+  color: #68a3e5;
+}
+
+.legend-t {
+  color: #e6f13d;
+}
+
+.legend-kill {
+  color: #fff;
+}
+
+.legend-bomb {
+  color: #ff5c00;
 }
 
 .round-buttons {
@@ -348,4 +492,147 @@ code {
   align-items: stretch;
   flex: 0 0 auto;
   overflow-y: auto;
+}
+
+.main-layout.theater .scoreboard-panel {
+  display: none;
+}
+
+.kill-feed {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  z-index: 5;
+  pointer-events: none;
+  align-items: flex-end;
+}
+
+.kill-feed-entry {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: rgba(0, 0, 0, 0.55);
+  border: 1px solid #333;
+  border-radius: 6px;
+  padding: 3px 8px;
+  font-size: 12px;
+}
+
+.kf-name.ct {
+  color: #8db8f0;
+  font-weight: 600;
+}
+
+.kf-name.t {
+  color: #e6f13d;
+  font-weight: 600;
+}
+
+.kf-hs {
+  color: #ff5555;
+  font-size: 9px;
+  font-weight: bold;
+  border: 1px solid #ff5555;
+  border-radius: 3px;
+  padding: 0 3px;
+}
+
+.kf-assist {
+  color: #888;
+  font-size: 11px;
+}
+
+.kill-feed .weapon-icon {
+  width: 20px;
+  height: 20px;
+}
+
+.focus-hud {
+  position: absolute;
+  left: 10px;
+  bottom: 10px;
+  background: rgba(0, 0, 0, 0.6);
+  border: 1px solid #333;
+  border-radius: 8px;
+  padding: 8px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  z-index: 5;
+  pointer-events: none;
+  align-items: flex-start;
+}
+
+.focus-hud.dead {
+  opacity: 0.5;
+}
+
+.focus-hud-name {
+  font-weight: 700;
+}
+
+.focus-hud-stats {
+  display: flex;
+  gap: 10px;
+  font-size: 13px;
+  color: #ccc;
+}
+
+.hp {
+  font-weight: bold;
+}
+
+.hp-high {
+  color: #4caf50;
+}
+
+.hp-mid {
+  color: #ffb300;
+}
+
+.hp-low {
+  color: #f44336;
+}
+
+.focus-hud-weapon .weapon-icon {
+  width: 32px;
+  height: 32px;
+}
+
+.toast {
+  position: fixed;
+  top: 72px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: #3a1111;
+  color: #f88;
+  border: 1px solid #a33;
+  border-radius: 8px;
+  padding: 10px 16px;
+  z-index: 200000;
+  font-size: 14px;
+}
+
+.upload-progress {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 12px;
+  color: #aaa;
+}
+
+.upload-progress-track {
+  height: 6px;
+  background: #222;
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.upload-progress-fill {
+  height: 100%;
+  background: #68a3e5;
+  transition: width 0.2s;
 }

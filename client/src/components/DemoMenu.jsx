@@ -4,6 +4,7 @@ export const DemoMenu = ({
   demos,
   demoId,
   uploading,
+  uploadProgress,
   onSelectDemo,
   onUpload,
   onDeleteDemo,
@@ -44,6 +45,20 @@ export const DemoMenu = ({
           >
             {uploading ? "Uploading…" : "Upload .dem"}
           </button>
+          {uploadProgress && (
+            <div className="upload-progress">
+              <div className="upload-progress-label">
+                {uploadProgress.phase === "uploading" ? "Uploading" : "Parsing"}{" "}
+                {uploadProgress.pct}%
+              </div>
+              <div className="upload-progress-track">
+                <div
+                  className="upload-progress-fill"
+                  style={{ width: `${uploadProgress.pct}%` }}
+                />
+              </div>
+            </div>
+          )}
           {demoId && (
             <button
               className="delete-demo"

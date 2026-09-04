@@ -1,9 +1,24 @@
-import React, { useRef, useEffect, useState } from "react";
+import React, { useRef, useEffect, useState, useMemo } from "react";
 import { MAPS, RADAR_NATIVE_SIZE } from "../maps/config";
+import { KillFeed } from "./KillFeed.jsx";
+import { FocusHud } from "./FocusHud.jsx";
 
 const clamp = (v, min, max) => Math.min(max, Math.max(min, v));
 
-export const Frame = ({ frame, mapName, focusPlayer, filters }) => {
+const TRAIL_FRAMES = 120; // ~2s of movement history
+const KILL_MARKER_FRAMES = 300; // kill markers fade over ~5s
+const DEAD_FADE_FRAMES = 240; // dead dots fade over ~4s
+
+export const Frame = ({
+  frame,
+  frames,
+  kills,
+  index,
+  mapName,
+  focusPlayer,
+  filters,
+  onSelectPlayer,
+}) => {
   const canvasRef = useRef(null);
   const containerRef = useRef(null);
   const wrapperRef = useRef(null);
@@ -14,6 +29,7 @@ export const Frame = ({ frame, mapName, focusPlayer, filters }) => {
   const imgRef = useRef(null);
   const pinchRef = useRef(null);
   const dragRef = useRef(null);
+  const dragMovedRef = useRef(false);
 
   const map = MAPS[mapName] || MAPS.de_ancient;
 
@@ -73,9 +89,51 @@ export const Frame = ({ frame, mapName, focusPlayer, filters }) => {
     return (worldRadius / map.scale / nativeScale) * scale;
   };
 
+  // Per-player position history across the round, for trails.
+  const trails = useMemo(() => {
+    const m = new Map();
+    if (!frames) return m;
+    frames.forEach((f, i) => {
+      f.playerStates?.forEach((ps) => {
+        let arr = m.get(ps.steamId);
+        if (!arr) {
+          arr = new Array(frames.length);
+          m.set(ps.steamId, arr);
+        }
+        arr[i] = { x: ps.position.x, y: ps.position.y, alive: ps.alive };
+      });
+    });
+    return m;
+  }, [frames]);
+
+  // Frame index at which each player died, for fading dead dots.
+  const deathIndex = useMemo(() => {
+    const m = new Map();
+    if (!kills?.length || !frames?.length) return m;
+    const first = frames[0].frame;
+    kills.forEach((k) => {
+      if (k.victimSteamId && !m.has(k.victimSteamId)) {
+        m.set(k.victimSteamId, k.frame - first);
+      }
+    });
+    return m;
+  }, [kills, frames]);
+
   const draw = (ctx, player) => {
     const { position, alive, team, firing, yaw, name, health } = player;
 
+    let alpha = 1;
+    if (!alive) {
+      const di = deathIndex.get(player.steamId);
+      if (di != null) {
+        const age = index - di;
+        if (age > DEAD_FADE_FRAMES) return; // long dead: don't clutter the map
+        alpha = Math.max(0.2, 1 - age / DEAD_FADE_FRAMES);
+      }
+    }
+
+    ctx.save();
+    ctx.globalAlpha = alpha;
     ctx.fillStyle = team === "CT" ? "#68a3e5" : "#e6f13d";
     if (!alive) {
       ctx.fillStyle = "#515151";
@@ -83,15 +141,24 @@ export const Frame = ({ frame, mapName, focusPlayer, filters }) => {
     var rad = (90 - yaw) * (Math.PI / 180);
     var { x, y } = transformPos(position.x, position.y);
 
-    ctx.save();
+    if (filters.names) {
+      ctx.font = "11px sans-serif";
+      ctx.lineWidth = 3;
+      ctx.strokeStyle = "rgba(0, 0, 0, 0.85)";
+      ctx.strokeText(name, x + 6, y - 6);
+      ctx.fillStyle = alive ? "#ffffff" : "#bbbbbb";
+      ctx.fillText(name, x + 6, y - 6);
+      // restore the dot color for the body below
+      ctx.fillStyle = team === "CT" ? "#68a3e5" : "#e6f13d";
+      if (!alive) {
+        ctx.fillStyle = "#515151";
+      }
+    }
     ctx.strokeStyle = "#ffffff";
     if (!alive) {
       ctx.strokeStyle = "#939393";
     }
 
-    if (filters.names) {
-      ctx.strokeText(name, x + 3, y - 3);
-    }
     ctx.beginPath();
     ctx.arc(x, y, 4, 0, 2 * Math.PI);
     ctx.fill();
@@ -125,13 +192,67 @@ export const Frame = ({ frame, mapName, focusPlayer, filters }) => {
     }
   };
 
+  const drawTrails = (ctx) => {
+    if (!filters.trails || !frames?.length) return;
+    frame?.playerStates?.forEach((p) => {
+      const hist = trails.get(p.steamId);
+      if (!hist) return;
+      const start = Math.max(0, index - TRAIL_FRAMES);
+      const color = p.team === "CT" ? "#68a3e5" : "#e6f13d";
+      ctx.strokeStyle = color;
+      ctx.lineWidth = 2;
+      for (let i = start + 1; i <= index; i++) {
+        const a = hist[i - 1];
+        const b = hist[i];
+        if (!a || !b || !b.alive) continue;
+        ctx.globalAlpha = ((i - start) / TRAIL_FRAMES) * 0.4;
+        const pa = transformPos(a.x, a.y);
+        const pb = transformPos(b.x, b.y);
+        ctx.beginPath();
+        ctx.moveTo(pa.x, pa.y);
+        ctx.lineTo(pb.x, pb.y);
+        ctx.stroke();
+      }
+    });
+    ctx.globalAlpha = 1;
+  };
+
+  const drawKillMarkers = (ctx) => {
+    if (!kills?.length || !frames?.length) return;
+    const first = frames[0].frame;
+    kills.forEach((k) => {
+      const ki = k.frame - first;
+      if (ki < 0) return;
+      const age = index - ki;
+      if (age < 0 || age > KILL_MARKER_FRAMES) return;
+      const { x, y } = transformPos(k.position.x, k.position.y);
+      ctx.globalAlpha = 1 - age / KILL_MARKER_FRAMES;
+      ctx.strokeStyle = "#ff3b30";
+      ctx.lineWidth = 2.5;
+      const r = 5;
+      ctx.beginPath();
+      ctx.moveTo(x - r, y - r);
+      ctx.lineTo(x + r, y + r);
+      ctx.moveTo(x + r, y - r);
+      ctx.lineTo(x - r, y + r);
+      ctx.stroke();
+    });
+    ctx.globalAlpha = 1;
+  };
+
   const drawBomb = (ctx, bomb) => {
     if (bomb && bomb.planted) {
-      ctx.fillStyle = "#FF0000";
       const { x, y } = transformPos(bomb.position.x, bomb.position.y);
+      const s = 7;
+      ctx.fillStyle = "#ff2222";
+      ctx.fillRect(x - s / 2, y - s / 2, s, s);
+      // expanding pulse ring
+      const ph = (frame ? frame.time % 1.2 : 0) / 1.2;
+      ctx.strokeStyle = `rgba(255, 90, 0, ${(0.7 * (1 - ph)).toFixed(3)})`;
+      ctx.lineWidth = 1.5;
       ctx.beginPath();
-      ctx.rect(x, y, 7, 7);
-      ctx.fill();
+      ctx.arc(x, y, 5 + ph * 18, 0, 2 * Math.PI);
+      ctx.stroke();
     }
   };
   const drawFlash = (ctx, flash) => {
@@ -187,11 +308,18 @@ export const Frame = ({ frame, mapName, focusPlayer, filters }) => {
       offsetX: view.offsetX,
       offsetY: view.offsetY,
     };
+    dragMovedRef.current = false;
   };
 
   const onMouseMove = (e) => {
     const d = dragRef.current;
     if (!d) return;
+    if (
+      Math.abs(e.clientX - d.x) > 4 ||
+      Math.abs(e.clientY - d.y) > 4
+    ) {
+      dragMovedRef.current = true;
+    }
     setView((prev) => ({
       ...prev,
       offsetX: d.offsetX + (e.clientX - d.x),
@@ -201,6 +329,46 @@ export const Frame = ({ frame, mapName, focusPlayer, filters }) => {
 
   const onMouseUp = () => {
     dragRef.current = null;
+  };
+
+  // Map a world position to canvas pixels, matching the current view
+  // transform (focus-zoom or pan/zoom). Used for click-to-focus.
+  const toScreen = (worldX, worldY) => {
+    const c = transformPos(worldX, worldY);
+    if (focusPlayer) {
+      const f = frame?.playerStates?.find((p) => p.steamId === focusPlayer);
+      if (f) {
+        const fp = transformPos(f.position.x, f.position.y);
+        return {
+          x: displaySize.width / 2 + (c.x - fp.x) * focusZoom,
+          y: displaySize.height / 2 + (c.y - fp.y) * focusZoom,
+        };
+      }
+    }
+    return {
+      x: c.x * view.zoom + view.offsetX,
+      y: c.y * view.zoom + view.offsetY,
+    };
+  };
+
+  const onClick = (e) => {
+    if (dragMovedRef.current) return; // that was a pan, not a click
+    if (!onSelectPlayer || !frame?.playerStates) return;
+    const rect = containerRef.current.getBoundingClientRect();
+    const mx = e.clientX - rect.left;
+    const my = e.clientY - rect.top;
+    let best = null;
+    let bestDist = 18 * 18;
+    frame.playerStates.forEach((p) => {
+      const { x, y } = toScreen(p.position.x, p.position.y);
+      const d = (x - mx) * (x - mx) + (y - my) * (y - my);
+      if (d < bestDist) {
+        bestDist = d;
+        best = p;
+      }
+    });
+    if (!best) return;
+    onSelectPlayer(best.steamId === focusPlayer ? null : best.steamId);
   };
 
   const onWheel = (e) => {
@@ -316,16 +484,32 @@ export const Frame = ({ frame, mapName, focusPlayer, filters }) => {
         imgSize.height * scale,
       );
     }
+    drawTrails(context);
     frame?.playerStates?.forEach((player) => draw(context, player));
     frame?.smokes?.forEach((smoke) => drawSmoke(context, smoke));
     frame?.flashes?.forEach((flash) => drawFlash(context, flash));
     frame?.grenades?.forEach((grenade) => drawProjectile(context, grenade));
     frame?.fires?.forEach((fire) => drawFire(context, fire));
     frame?.hes?.forEach((he) => drawHe(context, he));
+    drawKillMarkers(context);
     drawBomb(context, frame?.bombState);
 
     context.restore();
-  }, [frame, map.image, imgSize, focusPlayer, view, focusZoom, displaySize, filters]);
+  }, [
+    frame,
+    frames,
+    kills,
+    index,
+    map.image,
+    imgSize,
+    focusPlayer,
+    view,
+    focusZoom,
+    displaySize,
+    filters,
+    trails,
+    deathIndex,
+  ]);
 
   useEffect(() => {
     if (focusPlayer) {
@@ -355,6 +539,7 @@ export const Frame = ({ frame, mapName, focusPlayer, filters }) => {
         onMouseMove={onMouseMove}
         onMouseUp={onMouseUp}
         onMouseLeave={onMouseUp}
+        onClick={onClick}
         onTouchStart={onTouchStart}
         onTouchMove={onTouchMove}
         onTouchEnd={onTouchEnd}
@@ -365,6 +550,8 @@ export const Frame = ({ frame, mapName, focusPlayer, filters }) => {
           ref={canvasRef}
           style={{ cursor: "grab" }}
         />
+        <KillFeed kills={kills} frames={frames} index={index} />
+        <FocusHud frame={frame} focusPlayer={focusPlayer} />
       </div>
     </div>
   );

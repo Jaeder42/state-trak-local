@@ -40,13 +40,22 @@ Everything else serves the embedded React app (SPA fallback).
 
 `controllers/game.go:ParseDemo()` walks the demo with demoinfocs event
 handlers (frame done, round start/end, smoke/flash/HE explode, weapon fire,
-bomb planted, ...) and accumulates per-round `FrameState`s: player positions,
-yaw, health, weapons, scoreboard, smokes/flashes/HEs/fires, grenade
-projectiles, bomb state. Output is written per round (`<round>.json`) plus a
-`output.json` with game metadata.
+bomb planted, kill, ...) and accumulates per-round `FrameState`s: player
+positions, yaw, health, weapons, scoreboard, smokes/flashes/HEs/fires, grenade
+projectiles, bomb state. Output is written per round (`<round>.json`), which
+contains the frames, the round winner, and a `kills` array (`KillEvent`:
+attacker/victim names, steam ids, teams, weapon, headshot flag, and the
+victim's death position — the client uses it for the kill feed, kill markers,
+timeline notches, and fading dead dots), plus a `output.json` with game
+metadata.
 
 ## Gotchas & decisions worth remembering
 
+- **CS2 players can still plant the bomb after `RoundEnd`**, during the
+  round-over period. That "phantom" plant is a real event and leaves a few
+  planted frames at the end of the finished round — all transient state
+  (bomb, smokes, flashes, HEs) is therefore reset on **`RoundStart`**, not
+  just `RoundEnd`, so it can't leak into the next round's frames.
 - **CS2 demos don't expose a frame count until the end of the file** — the
   demoinfocs `Progress()` call is based on header playback frames, which for
   CS2 are only known once the `CDemoFileInfo` message at the very end is

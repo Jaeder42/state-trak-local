@@ -104,6 +104,32 @@ type Round struct {
 	Round  *int         `json:"round"`
 	Frames []FrameState `json:"frames"`
 	Winner string       `json:"winner"`
+	Kills  []KillEvent  `json:"kills"`
+}
+
+type KillEvent struct {
+	Frame           int     `json:"frame"`
+	Time            float64 `json:"time"`
+	Attacker        string  `json:"attacker"`
+	AttackerSteamId string  `json:"attackerSteamId"`
+	AttackerTeam    string  `json:"attackerTeam"`
+	Victim          string  `json:"victim"`
+	VictimSteamId   string  `json:"victimSteamId"`
+	VictimTeam      string  `json:"victimTeam"`
+	Assister        string  `json:"assister,omitempty"`
+	Weapon          string  `json:"weapon"`
+	Headshot        bool    `json:"headshot"`
+	Position        Vector  `json:"position"`
+}
+
+func teamName(t common.Team) string {
+	switch t {
+	case common.TeamTerrorists:
+		return "T"
+	case common.TeamCounterTerrorists:
+		return "CT"
+	}
+	return ""
 }
 
 type Game struct {
@@ -191,6 +217,7 @@ func ParseDemo(demoId string, filePath string) Game {
 	var gameStartFrame int
 	var gameEndFrame int
 	var rounds []Round
+	roundKills := map[int][]KillEvent{}
 	currentRound := -1
 	matchStarted := false
 	smokes := map[int]SmokeState{}
@@ -283,6 +310,7 @@ func ParseDemo(demoId string, filePath string) Game {
 		if len(rounds) <= round {
 			rounds = append(rounds, Round{
 				Round: &round,
+				Kills: roundKills[round],
 			})
 		}
 		frames := rounds[round].Frames
@@ -410,6 +438,7 @@ func ParseDemo(demoId string, filePath string) Game {
 		gameStartFrame = p.CurrentFrame()
 		// Discard the knife round so the first real round overwrites it.
 		rounds = []Round{}
+		roundKills = map[int][]KillEvent{}
 		currentRound = -1
 		matchStarted = true
 	})
@@ -474,6 +503,19 @@ func ParseDemo(demoId string, filePath string) Game {
 		if matchStarted {
 			currentRound++
 		}
+		// CS2 lets players plant the bomb (and throw nades) after RoundEnd,
+		// during the round-over period. Reset all transient state here so a
+		// phantom post-round plant doesn't leak into the next round's frames.
+		smokes = map[int]SmokeState{}
+		flashes = map[int]FlashState{}
+		hes = map[int]HEState{}
+		currentBomb = BombState{
+			Planted: false,
+			Position: Vector{
+				X: 0,
+				Y: 0,
+			},
+		}
 	})
 	p.RegisterEventHandler(func(e events.RoundEnd) {
 		// fmt.Println("Round ended ------------------------------------------------------ ")
@@ -490,6 +532,7 @@ func ParseDemo(demoId string, filePath string) Game {
 
 		smokes = map[int]SmokeState{}
 		flashes = map[int]FlashState{}
+		hes = map[int]HEState{}
 		currentBomb = BombState{
 			Planted: false,
 			Position: Vector{
@@ -505,8 +548,40 @@ func ParseDemo(demoId string, filePath string) Game {
 			firing = append(firing, e.Shooter.SteamID64)
 		}
 	})
+	p.RegisterEventHandler(func(e events.Kill) {
+		if !matchStarted || currentRound < 0 {
+			return
+		}
+		k := KillEvent{
+			Frame:    p.CurrentFrame(),
+			Time:     p.CurrentTime().Seconds(),
+			Headshot: e.IsHeadshot,
+		}
+		if e.Weapon != nil {
+			k.Weapon = e.Weapon.String()
+		}
+		if e.Killer != nil {
+			k.Attacker = e.Killer.Name
+			k.AttackerSteamId = strconv.FormatUint(e.Killer.SteamID64, 10)
+			k.AttackerTeam = teamName(e.Killer.TeamState.Team())
+		}
+		if e.Victim != nil {
+			k.Victim = e.Victim.Name
+			k.VictimSteamId = strconv.FormatUint(e.Victim.SteamID64, 10)
+			k.VictimTeam = teamName(e.Victim.TeamState.Team())
+			pos := e.Victim.Position()
+			k.Position = Vector{X: pos.X, Y: pos.Y}
+		}
+		if e.Assister != nil && e.Assister.Name != "" {
+			k.Assister = e.Assister.Name
+		}
+		if currentRound < len(rounds) {
+			rounds[currentRound].Kills = append(rounds[currentRound].Kills, k)
+		} else {
+			roundKills[currentRound] = append(roundKills[currentRound], k)
+		}
+	})
 	p.RegisterEventHandler(func(e events.BombPlanted) {
-		// fmt.Printf("%s Planted the bomb \n", e.BombEvent.Player.Position())
 		pos := e.BombEvent.Player.Position()
 		currentBomb = BombState{
 			Planted: true,

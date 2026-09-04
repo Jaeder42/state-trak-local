@@ -64,8 +64,10 @@ client        -> fetches /demos/:id/output (metadata), /demos/:id/:round
                 (frames), renders on radar images from client/src/maps/
 ```
 
-- `controllers/game.go` — parser, data model (`FrameState`, `Round`, `Game`),
-  JSON output. Demo id `"local"` is used by the `-parse` flag.
+- `controllers/game.go` — parser, data model (`FrameState`, `Round`, `KillEvent`,
+  `Game`), JSON output. Round JSON contains `frames`, `winner`, and `kills`
+  (per-kill attacker/victim/team/weapon/headshot/death-position). Demo id
+  `"local"` is used by the `-parse` flag.
 - `controllers/demo.go` — upload/list/status/delete routes, in-memory
   `demoStatus` map, `meta.json` persistence, `loadPersistedDemos()` on startup.
 - `controllers/round.go` — round-serving routes.
@@ -75,6 +77,14 @@ client        -> fetches /demos/:id/output (metadata), /demos/:id/:round
   per-map config in `src/maps/`.
 
 ## Gotchas that will bite you
+
+- **CS2 players can plant the bomb after `RoundEnd`**, during the round-over
+  period. That phantom plant is a real event (it shows in the finished
+  round's last frames). All transient state (bomb, smokes, flashes, HEs) is
+  reset on **`RoundStart`** as well as `RoundEnd` — without the `RoundStart`
+  reset, the next round inherits `planted: true` for its entire duration.
+  If you touch the round lifecycle handlers, re-verify with a demo that has
+  a post-round plant (compare `bombState.planted` transitions per round).
 
 - **CS2 demos have no frame count until the end of the file.** demoinfocs
   `Parser.Progress()` (header-based) is therefore 0 for the whole parse.
