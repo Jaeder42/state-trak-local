@@ -1,6 +1,6 @@
 import { Weapon } from "./Weapon.jsx";
 
-export const FocusHud = ({ frame, focusPlayer }) => {
+export const FocusHud = ({ frame, focusPlayer, mySteamId }) => {
   if (!frame || !focusPlayer) return null;
   const p = frame.playerStates?.find((x) => x.steamId === focusPlayer);
   if (!p) return null;
@@ -8,9 +8,13 @@ export const FocusHud = ({ frame, focusPlayer }) => {
     ...(frame.ctScoreBoard || []),
     ...(frame.tScoreBoard || []),
   ].find((x) => x.steamId === focusPlayer);
+  const isMe = mySteamId && focusPlayer === mySteamId;
   return (
     <div className={`focus-hud ${p.alive ? "" : "dead"}`}>
-      <div className="focus-hud-name">{p.name}</div>
+      <div className="focus-hud-name">
+        {p.name}
+        {isMe && <span className="focus-hud-you"> (you)</span>}
+      </div>
       <div className="focus-hud-stats">
         <span
           className={

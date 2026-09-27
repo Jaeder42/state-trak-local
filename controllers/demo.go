@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -25,11 +26,17 @@ type DemoStatus struct {
 var (
 	demoMu     sync.Mutex
 	demoStatus = map[string]*DemoStatus{}
+
+	// parseSem caps concurrent demo parses — demoinfocs on a large demo
+	// allocates heavily, and a burst of uploads would otherwise spike RAM.
+	parseSem chan struct{}
 )
 
 const (
 	uploadDir = "./controllers/data/uploads"
 	outputDir = "./controllers/data/output"
+
+	defaultUploadMaxBytes = 1 << 30 // 1 GB
 )
 
 func init() {
@@ -39,6 +46,14 @@ func init() {
 	if err := os.MkdirAll(outputDir, 0755); err != nil {
 		panic(err)
 	}
+
+	concurrency := 1
+	if v := os.Getenv("PARSE_CONCURRENCY"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+			concurrency = n
+		}
+	}
+	parseSem = make(chan struct{}, concurrency)
 	loadPersistedDemos()
 }
 
@@ -101,6 +116,16 @@ func UploadDemo(c *gin.Context) {
 		c.JSON(400, gin.H{"error": "file must be a .dem"})
 		return
 	}
+	maxBytes := int64(defaultUploadMaxBytes)
+	if v := os.Getenv("UPLOAD_MAX_BYTES"); v != "" {
+		if n, err := strconv.ParseInt(v, 10, 64); err == nil && n > 0 {
+			maxBytes = n
+		}
+	}
+	if file.Size > maxBytes {
+		c.JSON(400, gin.H{"error": fmt.Sprintf("file too large (max %d MB)", maxSizeMB(maxBytes))})
+		return
+	}
 
 	demoId := fmt.Sprintf("%d", time.Now().UnixNano())
 	demoPath := filepath.Join(uploadDir, demoId+".dem")
@@ -133,6 +158,8 @@ func UploadDemo(c *gin.Context) {
 				demoMu.Unlock()
 			}
 		}()
+		parseSem <- struct{}{} // wait for a free parse slot (RAM cap)
+		defer func() { <-parseSem }()
 		ParseDemo(demoId, demoPath)
 		demoMu.Lock()
 		demoStatus[demoId].Status = "done"
@@ -142,6 +169,11 @@ func UploadDemo(c *gin.Context) {
 	}()
 
 	c.JSON(200, gin.H{"id": demoId})
+}
+
+// maxSizeMB renders an upload cap for error messages.
+func maxSizeMB(bytes int64) int64 {
+	return bytes / (1 << 20)
 }
 
 func GetDemoStatus(c *gin.Context) {

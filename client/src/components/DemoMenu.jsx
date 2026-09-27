@@ -5,9 +5,13 @@ export const DemoMenu = ({
   demoId,
   uploading,
   uploadProgress,
+  analysisRunning,
+  postplantRunning,
   onSelectDemo,
   onUpload,
   onDeleteDemo,
+  onRunAnalysis,
+  onRunPostPlant,
 }) => {
   const [open, setOpen] = useState(false);
   const fileInputRef = useRef(null);
@@ -58,6 +62,22 @@ export const DemoMenu = ({
                 />
               </div>
             </div>
+          )}
+          {demoId && (
+            <button
+              onClick={() => onRunPostPlant(demoId)}
+              disabled={postplantRunning}
+            >
+              {postplantRunning ? "Analyzing…" : "Post-plant analysis"}
+            </button>
+          )}
+          {demoId && (
+            <button
+              onClick={() => onRunAnalysis(demoId)}
+              disabled={analysisRunning}
+            >
+              {analysisRunning ? "Analyzing…" : "JEV analysis"}
+            </button>
           )}
           {demoId && (
             <button

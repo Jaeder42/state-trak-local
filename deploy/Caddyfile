@@ -1,0 +1,24 @@
+# Caddy reverse proxy for StateTrak.
+#
+# 1. Point a DNS A/AAAA record at the VPS.
+# 2. Replace demo.example.com with your domain.
+# 3. Generate the password hash:  caddy hash-password
+#    and replace the placeholder below. The username here is "friend" —
+#    add one basic_auth entry per friend.
+# 4. Copy to /etc/caddy/Caddyfile and: sudo systemctl reload caddy
+#
+# basic_auth is the only auth layer: the app itself has none, so this must
+# stay enabled for anything reachable from the internet.
+
+demo.example.com {
+	basic_auth {
+		friend $2a$14$REPLACE_WITH_HASH
+	}
+
+	# Hard cap uploads in front of the app's own UPLOAD_MAX_BYTES check.
+	request_body {
+		max_size 1GB
+	}
+
+	reverse_proxy 127.0.0.1:3007
+}

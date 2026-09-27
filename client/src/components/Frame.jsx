@@ -18,6 +18,8 @@ export const Frame = ({
   focusPlayer,
   filters,
   onSelectPlayer,
+  mySteamId,
+  myTeam,
 }) => {
   const canvasRef = useRef(null);
   const containerRef = useRef(null);
@@ -121,6 +123,7 @@ export const Frame = ({
 
   const draw = (ctx, player) => {
     const { position, alive, team, firing, yaw, name, health } = player;
+    const isMe = mySteamId && player.steamId === mySteamId;
 
     let alpha = 1;
     if (!alive) {
@@ -130,6 +133,10 @@ export const Frame = ({
         if (age > DEAD_FADE_FRAMES) return; // long dead: don't clutter the map
         alpha = Math.max(0.2, 1 - age / DEAD_FADE_FRAMES);
       }
+    }
+    // "Focus my team": keep my team at full strength, fade out the enemy.
+    if (filters.teamFocus && myTeam && team && team !== myTeam && alive) {
+      alpha *= 0.35;
     }
 
     ctx.save();
@@ -178,6 +185,19 @@ export const Frame = ({
     }
     ctx.restore();
 
+    // My own dot: white halo ring so I can always find myself, drawn on top
+    // (see the draw order below).
+    if (isMe) {
+      ctx.save();
+      ctx.globalAlpha = 1;
+      ctx.strokeStyle = "#ffffff";
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.arc(x, y, 7, 0, 2 * Math.PI);
+      ctx.stroke();
+      ctx.restore();
+    }
+
     if (alive && health != null && filters.health) {
       const barWidth = 20;
       const barHeight = 3;
@@ -199,13 +219,16 @@ export const Frame = ({
       if (!hist) return;
       const start = Math.max(0, index - TRAIL_FRAMES);
       const color = p.team === "CT" ? "#68a3e5" : "#e6f13d";
+      // dim enemy trails to match the "focus my team" dot fading
+      const dim =
+        filters.teamFocus && myTeam && p.team && p.team !== myTeam ? 0.35 : 1;
       ctx.strokeStyle = color;
       ctx.lineWidth = 2;
       for (let i = start + 1; i <= index; i++) {
         const a = hist[i - 1];
         const b = hist[i];
         if (!a || !b || !b.alive) continue;
-        ctx.globalAlpha = ((i - start) / TRAIL_FRAMES) * 0.4;
+        ctx.globalAlpha = ((i - start) / TRAIL_FRAMES) * 0.4 * dim;
         const pa = transformPos(a.x, a.y);
         const pb = transformPos(b.x, b.y);
         ctx.beginPath();
@@ -227,7 +250,13 @@ export const Frame = ({
       if (age < 0 || age > KILL_MARKER_FRAMES) return;
       const { x, y } = transformPos(k.position.x, k.position.y);
       ctx.globalAlpha = 1 - age / KILL_MARKER_FRAMES;
-      ctx.strokeStyle = "#ff3b30";
+      // With a known team, markers read from my team's perspective: green =
+      // an enemy died, red = a teammate died. Otherwise fall back to red.
+      let color = "#ff3b30";
+      if (myTeam && k.victimTeam) {
+        color = k.victimTeam === myTeam ? "#ff3b30" : "#4caf50";
+      }
+      ctx.strokeStyle = color;
       ctx.lineWidth = 2.5;
       const r = 5;
       ctx.beginPath();
@@ -515,7 +544,12 @@ export const Frame = ({
       );
     }
     drawTrails(context);
-    frame?.playerStates?.forEach((player) => draw(context, player));
+    // Draw my own dot last so it (and its halo) is never covered by others.
+    const players = [...(frame?.playerStates || [])].sort(
+      (a, b) =>
+        (a.steamId === mySteamId ? 1 : 0) - (b.steamId === mySteamId ? 1 : 0),
+    );
+    players.forEach((player) => draw(context, player));
     frame?.smokes?.forEach((smoke) => drawSmoke(context, smoke));
     frame?.flashes?.forEach((flash) => drawFlash(context, flash));
     frame?.grenades?.forEach((grenade) => drawProjectile(context, grenade));
@@ -540,6 +574,8 @@ export const Frame = ({
     filters,
     trails,
     deathIndex,
+    mySteamId,
+    myTeam,
   ]);
 
   useEffect(() => {
@@ -581,8 +617,14 @@ export const Frame = ({
           ref={canvasRef}
           style={{ cursor: "grab" }}
         />
-        <KillFeed kills={kills} frames={frames} index={index} />
-        <FocusHud frame={frame} focusPlayer={focusPlayer} />
+        <KillFeed
+          kills={kills}
+          frames={frames}
+          index={index}
+          mySteamId={mySteamId}
+          myTeam={myTeam}
+        />
+        <FocusHud frame={frame} focusPlayer={focusPlayer} mySteamId={mySteamId} />
       </div>
     </div>
   );

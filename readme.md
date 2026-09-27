@@ -5,7 +5,7 @@ Uses [DemoInfoCs](https://github.com/markus-wa/demoinfocs-golang)
 
 ## Usage
 
-Build & run (compiles the React client into the binary, listens on `:3001`):
+Build & run (compiles the React client into the binary, listens on `:3007`):
 
     make
 
@@ -21,6 +21,27 @@ Parse a demo offline without starting the server (writes JSON to
 
     go run . -parse=path/to/demo.dem
 
+The viewer orients around **your team**: the settings panel (⚙) stores your
+Steam ID in localStorage (defaulting to the owner's account,
+`client/src/utils/me.js`). With it set, the scoreboard puts your team first
+("YOUR TEAM" / "ENEMY") and highlights your row, the radar dims enemy players
+("Focus my team" filter) and draws a halo around your own dot, the kill feed
+and timeline mark your team's kills green and teammate deaths red, and the
+round bar colors rounds win/loss from your perspective. Demos parsed before
+the roster field shipped lack per-round team info and fall back to the old
+neutral coloring — re-upload them to get it.
+
+Analyze a parsed demo's round economies with [JEV](https://typesafe.ai)
+(TypeSafe's "System One" decision model) — classifies each team's buy per
+round (pistol / eco / force / half / full) and prints where JEV's semantic
+judgment disagrees with the parser's deterministic threshold baseline:
+
+    TYPESAFE_API_KEY=... go run . -jev=local   # live analysis (key: console.typesafe.ai)
+    go run . -jev=local                        # dry run: baseline + example request only
+
+The key can also live in a `.env` file in the repo root (`TYPESAFE_API_KEY=...`)
+— it's gitignored, and real environment variables take precedence over it.
+
 ## API
 
 | Route | Description |
@@ -30,11 +51,39 @@ Parse a demo offline without starting the server (writes JSON to
 | `GET /demos/:id/status` | parse status incl. live progress |
 | `DELETE /demos/:id` | delete upload + output |
 | `GET /demos/:id/output` | game metadata (map, players, frame rate) |
-| `GET /demos/:id/rounds` | round list with winners |
+| `GET /demos/:id/rounds` | round list with winners, per-team buy types and per-team rosters (steam ids, from the round's economy snapshot) |
+| `GET /demos/:id/analysis` | JEV buy-type analysis per round (cached after the first call; needs `TYPESAFE_API_KEY`) |
+| `GET /demos/:id/postplant` | post-plant positioning per planted round — T setups (spread, distance to bomb, movement), CT retake entries (timing, grouping), and how each correlates with the outcome (cached after the first call). The panel also writes out good/bad pattern bullets for a chosen player's team (`client/src/utils/postplantText.js`) |
 | `GET /demos/:id/:round` | full per-frame data for one round |
 | `GET /ping` | health check |
 
 Everything else serves the embedded React app (SPA fallback).
+
+## Configuration
+
+All optional, via environment or `.env` in the working directory (loaded at
+startup, real env vars win):
+
+| Variable | Default | Description |
+| --- | --- | --- |
+| `TYPESAFE_API_KEY` | — | JEV analysis key (https://console.typesafe.ai). Required for `-jev` live runs and `/demos/:id/analysis` |
+| `UPLOAD_MAX_BYTES` | `1073741824` | max `.dem` upload size |
+| `PARSE_CONCURRENCY` | `1` | concurrent demo parses (each parse is RAM-heavy) |
+| `ALLOWED_ORIGIN` | — | enable CORS for one origin; the embedded client is same-origin and needs nothing |
+
+## Deploying
+
+Single binary behind a reverse proxy (nginx or Caddy: TLS + basic auth —
+the app itself has no auth). Human runbook: `deploy/README.md`; there is
+also an agent-executable runbook in `AGENTS.md` ("Server deployment") for
+letting a coding agent on the VPS do the setup.
+
+**Known limitation — user support is planned.** Auth is proxy-level basic
+auth only: everyone who logs in shares full access (any friend can delete
+any demo), there's no per-user attribution beyond nginx logs, and revoking
+someone means editing the htpasswd. Proper user support — per-user accounts,
+per-demo ownership, owner-only deletes — belongs in the app eventually.
+Until then the proxy auth must stay enabled.
 
 ## How parsing works
 
@@ -49,7 +98,15 @@ contains the frames, the round winner, and a `kills` array (`KillEvent`:
 attacker/victim names, steam ids, teams, weapon, headshot flag, and the
 victim's death position — the client uses it for the kill feed, kill markers,
 timeline notches, and fading dead dots), plus a `output.json` with game
-metadata.
+metadata. Round files also contain an `economy` object per round — each
+team's buy captured just after freeze time ends: per-player start money,
+spent, bank, primary weapon held, equipment value, armor/helmet/defuse, plus team aggregates
+(average equipment value, average/total spent), a count of players who
+survived the previous round (weapons carry over for them — the `kept` buy
+type), and a heuristic pistol/eco/force/hero/kept/half/full classification. That
+is the deterministic baseline for the JEV round analysis (`-jev` flag,
+`controllers/jev.go`), which sends the economy state to TypeSafe's System One
+and compares its judgment against the baseline.
 
 ## Gotchas & decisions worth remembering
 
@@ -65,6 +122,15 @@ metadata.
   is instead tracked by bytes consumed through a `countingReader` wrapper
   (`game.go`), reported as `progress`/`total` (percent) on
   `GET /demos/:id/status`.
+- **CS2 economy properties lie in two ways** (see `snapshotTeamEconomy` in
+  `game.go`): `Player.MoneySpentThisRound()` does *not* reset between rounds,
+  and `Player.EquipmentValueFreezetimeEnd()` read inside the
+  `RoundFreezetimeEnd` handler returns the *previous* round's snapshot. The
+  economy is therefore captured one frame after freeze time ends, using
+  live equipment values and start money snapshotted on `RoundStart` (spent
+  = start money − bank). Pistol-round equipment values can also carry
+  warmup leftovers; pistol detection uses start money ($800), which is
+  reliable.
 - **Demo names/statuses are persisted in `controllers/data/output/<id>/meta.json`**
   (written at upload time) and reloaded by `loadPersistedDemos()` on startup.
   The in-memory `demoStatus` map would otherwise be lost on restart. Demos

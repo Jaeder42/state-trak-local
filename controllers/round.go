@@ -32,6 +32,14 @@ func GetRound(c *gin.Context) {
 type RoundSummary struct {
 	Round  int    `json:"round"`
 	Winner string `json:"winner"`
+	CTBuy  string `json:"ctBuy,omitempty"` // heuristic buy type (pistol/eco/force/hero/kept/half/full)
+	TBuy   string `json:"tBuy,omitempty"`
+	// Team rosters (steam ids) at freeze-time end, from the round's economy
+	// snapshot. The client uses them to figure out which side "my" player was
+	// on in each round — teams swap at halftime, so this can't be inferred from
+	// the currently loaded round.
+	CTSteamIds []string `json:"ctSteamIds,omitempty"`
+	TSteamIds  []string `json:"tSteamIds,omitempty"`
 }
 
 func GetRounds(c *gin.Context) {
@@ -58,8 +66,9 @@ func GetRounds(c *gin.Context) {
 			continue
 		}
 		var round struct {
-			Round  *int   `json:"round"`
-			Winner string `json:"winner"`
+			Round   *int          `json:"round"`
+			Winner  string        `json:"winner"`
+			Economy *RoundEconomy `json:"economy"`
 		}
 		if err := json.Unmarshal(data, &round); err != nil {
 			continue
@@ -68,10 +77,22 @@ func GetRounds(c *gin.Context) {
 		if round.Round != nil {
 			roundNum = *round.Round
 		}
-		summaries = append(summaries, RoundSummary{
-			Round:  roundNum,
-			Winner: round.Winner,
-		})
+		summary := RoundSummary{Round: roundNum, Winner: round.Winner}
+		if round.Economy != nil {
+			if round.Economy.CT != nil {
+				summary.CTBuy = round.Economy.CT.Type
+				for _, p := range round.Economy.CT.Players {
+					summary.CTSteamIds = append(summary.CTSteamIds, p.SteamId)
+				}
+			}
+			if round.Economy.T != nil {
+				summary.TBuy = round.Economy.T.Type
+				for _, p := range round.Economy.T.Players {
+					summary.TSteamIds = append(summary.TSteamIds, p.SteamId)
+				}
+			}
+		}
+		summaries = append(summaries, summary)
 	}
 
 	sort.Slice(summaries, func(i, j int) bool {

@@ -299,7 +299,7 @@ code {
   display: flex;
   flex-direction: row;
   align-items: stretch;
-  height: 40px;
+  height: 48px;
 }
 
 .round-button {
@@ -309,7 +309,35 @@ code {
   background-color: transparent;
   color: #ccc;
   cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  min-width: 0;
+}
+
+.round-num {
   font-size: 14px;
+  line-height: 1;
+}
+
+.round-buys {
+  display: flex;
+  gap: 2px;
+  line-height: 1;
+}
+
+.buy-chip {
+  font-size: 7px;
+  font-weight: 700;
+  padding: 1px 2px;
+  border-radius: 2px;
+  color: #000;
+  letter-spacing: 0.2px;
+  min-width: 14px;
+  text-align: center;
+  white-space: nowrap;
 }
 
 .round-button:hover {
@@ -336,8 +364,68 @@ code {
   outline: 2px solid #fff;
 }
 
+/* Win/loss from my team's perspective (takes over from t-win/ct-win when
+   my team for that round is known) */
+.round-button.my-win {
+  background-color: rgba(76, 175, 80, 0.28);
+}
+
+.round-button.my-loss {
+  background-color: rgba(244, 67, 54, 0.28);
+}
+
+.round-button.my-win.active {
+  background-color: #4caf50;
+  color: #000;
+  outline: 2px solid #fff;
+}
+
+.round-button.my-loss.active {
+  background-color: #f44336;
+  color: #000;
+  outline: 2px solid #fff;
+}
+
+.side-chip {
+  font-size: 7px;
+  font-weight: 700;
+  padding: 1px 2px;
+  border-radius: 2px;
+  color: #000;
+  min-width: 14px;
+  text-align: center;
+}
+
+.side-chip.ct {
+  background: #68a3e5;
+}
+
+.side-chip.t {
+  background: #e6f13d;
+}
+
 .player-name {
   cursor: pointer;
+}
+
+.buy-pill {
+  display: inline-block;
+  font-size: 10px;
+  font-weight: 700;
+  padding: 1px 6px;
+  border-radius: 8px;
+  color: #000;
+  margin-left: 6px;
+  vertical-align: 2px;
+  white-space: nowrap;
+}
+
+.econ-value {
+  font-size: 11px;
+  color: #888;
+  margin-left: 6px;
+  font-weight: 400;
+  white-space: nowrap;
 }
 
 .player-name:hover {
@@ -347,6 +435,110 @@ code {
 .player-name.focused {
   color: #68a3e5;
   font-weight: bold;
+}
+
+.team-scoreboard tr.me td {
+  background: rgba(76, 175, 80, 0.12);
+}
+
+.you-tag {
+  color: #4caf50;
+  font-size: 10px;
+  font-weight: 600;
+  margin-left: 4px;
+}
+
+.team-pill {
+  display: inline-block;
+  font-size: 9px;
+  font-weight: 700;
+  padding: 1px 6px;
+  border-radius: 6px;
+  margin-left: 6px;
+  vertical-align: 2px;
+  white-space: nowrap;
+}
+
+.team-pill.you {
+  background: #4caf50;
+  color: #000;
+}
+
+.team-pill.enemy {
+  background: #444;
+  color: #bbb;
+}
+
+.tl-kill.them {
+  background: #4caf50;
+}
+
+.tl-kill.us {
+  background: #ff5c5c;
+}
+
+.legend-kill-them {
+  color: #4caf50;
+}
+
+.legend-kill-us {
+  color: #ff5c5c;
+}
+
+.steam-id-setting {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 14px;
+  border-top: 1px solid #333;
+  padding-top: 8px;
+}
+
+.steam-id-label {
+  font-size: 12px;
+  color: #aaa;
+}
+
+.steam-id-input {
+  background-color: #111;
+  color: #fff;
+  border: 1px solid #333;
+  border-radius: 4px;
+  padding: 6px 8px;
+  font-size: 13px;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.steam-id-status {
+  font-size: 11px;
+  color: #f66;
+}
+
+.steam-id-status.ok {
+  color: #4caf50;
+}
+
+.focus-hud-you {
+  color: #4caf50;
+  font-size: 12px;
+}
+
+.kf-star {
+  color: #4caf50;
+  font-size: 11px;
+}
+
+.kill-feed-entry.ours {
+  border-left: 3px solid #4caf50;
+}
+
+.kill-feed-entry.theirs {
+  border-left: 3px solid #f44336;
+}
+
+.kill-feed-entry.mine {
+  background: rgba(30, 90, 30, 0.65);
 }
 
 .player-name-cell {
@@ -633,4 +825,272 @@ code {
   height: 100%;
   background: #68a3e5;
   transition: width 0.2s;
+}
+
+.analysis-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.7);
+  z-index: 150000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.analysis-panel {
+  background: #111;
+  border: 1px solid #333;
+  border-radius: 10px;
+  padding: 16px 18px;
+  max-height: 80vh;
+  overflow-y: auto;
+  min-width: 520px;
+}
+
+.analysis-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 4px;
+}
+
+.analysis-header h3 {
+  margin: 0;
+  font-size: 15px;
+}
+
+.analysis-close {
+  background: none;
+  border: none;
+  color: #aaa;
+  font-size: 20px;
+  cursor: pointer;
+  padding: 0 4px;
+}
+
+.analysis-close:hover {
+  color: #fff;
+}
+
+.analysis-sub {
+  margin: 0 0 10px;
+  font-size: 11px;
+  color: #888;
+}
+
+.analysis-table {
+  border-collapse: collapse;
+  font-size: 12px;
+}
+
+.analysis-table th,
+.analysis-table td {
+  padding: 3px 12px 3px 0;
+  text-align: left;
+  border-bottom: 1px solid #222;
+  white-space: nowrap;
+}
+
+.analysis-table th {
+  color: #888;
+  font-weight: 600;
+}
+
+.analysis-table td.disagree {
+  color: #ff8c42;
+}
+
+.analysis-footer {
+  margin-top: 10px;
+  font-size: 11px;
+  color: #666;
+}
+
+/* ---------- post-plant analysis ---------- */
+
+.postplant-panel {
+  min-width: 720px;
+  max-width: 92vw;
+}
+
+.pp-summary-grid {
+  display: flex;
+  gap: 28px;
+  flex-wrap: wrap;
+  margin-bottom: 14px;
+}
+
+.pp-radars {
+  display: flex;
+  gap: 20px;
+  flex-wrap: wrap;
+  margin-bottom: 6px;
+}
+
+.pp-radar-fig {
+  margin: 0;
+}
+
+.pp-radar-fig figcaption {
+  font-size: 11px;
+  color: #888;
+  text-align: center;
+  margin-top: 4px;
+}
+
+.pp-win {
+  color: #4caf50;
+  font-weight: 600;
+}
+
+.pp-loss {
+  color: #f44336;
+  font-weight: 600;
+}
+
+.pp-outcome {
+  font-size: 9px;
+  font-weight: 700;
+  padding: 1px 6px;
+  border-radius: 6px;
+  white-space: nowrap;
+}
+
+.pp-outcome.ct {
+  background: #68a3e5;
+  color: #000;
+}
+
+.pp-outcome.t {
+  background: #e6f13d;
+  color: #000;
+}
+
+.pp-noretake {
+  color: #888;
+  font-size: 11px;
+}
+
+.pp-entry-n {
+  color: #888;
+  font-size: 11px;
+}
+
+.pp-watch {
+  background: #111;
+  color: #fff;
+  border: 1px solid #333;
+  border-radius: 4px;
+  padding: 3px 8px;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.pp-watch:hover {
+  background: #222;
+}
+
+.pp-empty {
+  color: #888;
+  margin: 12px 0;
+}
+
+.mini-radar {
+  display: block;
+  border: 1px solid #333;
+  border-radius: 6px;
+  background: #0a0a0a;
+}
+
+.mini-radar-missing {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  color: #666;
+  border: 1px solid #333;
+  border-radius: 6px;
+  box-sizing: border-box;
+}
+
+.pp-rounds-table td {
+  vertical-align: middle;
+}
+
+/* narrative card (team patterns for the chosen player) */
+
+.pp-narrative {
+  border: 1px solid #333;
+  border-radius: 8px;
+  background: rgba(22, 22, 22, 0.7);
+  padding: 12px 14px;
+  margin-bottom: 14px;
+}
+
+.pp-narrative-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+
+.pp-narrative-head h4 {
+  margin: 0;
+  font-size: 14px;
+}
+
+.pp-player-select {
+  background-color: #111;
+  color: #fff;
+  border: 1px solid #333;
+  border-radius: 4px;
+  padding: 4px 8px;
+  font-size: 13px;
+  max-width: 220px;
+}
+
+.pp-narrative-side h5 {
+  margin: 8px 0 4px;
+  font-size: 12px;
+  color: #aaa;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+}
+
+.pp-narrative-headline {
+  color: #fff;
+  text-transform: none;
+  letter-spacing: normal;
+  font-weight: 600;
+}
+
+.pp-narrative-list {
+  margin: 0;
+  padding-left: 18px;
+}
+
+.pp-narrative-list li {
+  margin: 3px 0;
+  font-size: 12.5px;
+  line-height: 1.45;
+}
+
+.pp-good {
+  color: #8fd98f;
+}
+
+.pp-bad {
+  color: #f08a8a;
+}
+
+.pp-mark {
+  font-weight: 700;
+  margin-right: 2px;
+}
+
+.pp-note {
+  font-size: 12px;
+  color: #777;
+  margin: 4px 0;
 }

@@ -102,10 +102,217 @@ type HEState struct {
 }
 
 type Round struct {
-	Round  *int         `json:"round"`
-	Frames []FrameState `json:"frames"`
-	Winner string       `json:"winner"`
-	Kills  []KillEvent  `json:"kills"`
+	Round   *int          `json:"round"`
+	Frames  []FrameState  `json:"frames"`
+	Winner  string        `json:"winner"`
+	Kills   []KillEvent   `json:"kills"`
+	Economy *RoundEconomy `json:"economy,omitempty"` // captured at freeze-time end
+}
+
+// PlayerEconomy is one player's money situation for a round, captured at
+// freeze-time end when the buy phase is over.
+type PlayerEconomy struct {
+	Name       string `json:"name"`
+	SteamId    string `json:"steamId"`
+	StartMoney int    `json:"startMoney"`       // bank at round start, before buys
+	Spent      int    `json:"spent"`            // money spent during the buy phase
+	EquipValue int    `json:"equipValue"`       // equipment value at freeze-time end
+	Bank       int    `json:"bank"`             // money remaining after the buy
+	Weapon     string `json:"weapon,omitempty"` // primary weapon held ("" = default pistol only)
+	Armor      int    `json:"armor"`            // 0-100
+	Helmet     bool   `json:"helmet"`
+	DefuseKit  bool   `json:"defuseKit"`
+}
+
+// TeamEconomy aggregates a team's buy for one round.
+type TeamEconomy struct {
+	Players    []PlayerEconomy `json:"players"`
+	AvgEquip   int             `json:"avgEquip"`            // average equipment value after the buy
+	AvgSpent   int             `json:"avgSpent"`            // average money spent in the buy phase
+	TotalSpent int             `json:"totalSpent"`          // total money spent in the buy phase
+	Type       string          `json:"type"`                // heuristic buy classification
+	Rifles     int             `json:"rifles,omitempty"`    // players holding a rifle-class weapon
+	Survivors  int             `json:"survivors,omitempty"` // players who kept weapons from the previous round
+}
+
+// RoundEconomy holds both teams' buy for one round. It is the input for the
+// JEV round analysis (controllers/jev.go).
+type RoundEconomy struct {
+	CT *TeamEconomy `json:"ct,omitempty"`
+	T  *TeamEconomy `json:"t,omitempty"`
+}
+
+// buyType classifies a team's round from held rifles (strength), money spent
+// (intent) and equipment value. It serves as the deterministic baseline that
+// the JEV analysis compares its semantic judgment against (see controllers/jev.go).
+//   - full:  4+/5 players hold rifle-class weapons (bought or kept) — the
+//     strength matters, not whether the guns were bought this round
+//   - kept:  full rifle strength without a meaningful buy (< $1500 per player:
+//     armor and utility top-ups don't turn a kept round into a full one)
+//   - hero:  exactly one player bought a real weapon (>= $1500: rifle, scout,
+//     or Deagle+armor territory) while the rest saved
+//   - eco:   bought nothing meaningful (< $2000 equip AND < $1000 spent)
+//   - force: cheap weapons (SMGs, pistols with armor) — under $3500 equip
+//   - half:  only 2-3 players hold rifles — the genuine mixed buy
+func buyType(pistol, hero bool, rifles, teamSize, avgEquip, avgSpent int) string {
+	switch {
+	case pistol:
+		return "pistol"
+	case hero:
+		return "hero"
+	case rifles >= teamSize-1:
+		// (near-)full rifle strength; money flow tells kept from full
+		if avgSpent < 1500 {
+			return "kept"
+		}
+		return "full"
+	case avgEquip < 2000 && avgSpent < 1000:
+		return "eco"
+	case avgEquip < 3500:
+		return "force"
+	default:
+		return "half"
+	}
+}
+
+// pistolRound reports whether every player present at round start began the
+// round with the standard $800 pistol-round money.
+func pistolRound(roundStartMoney map[uint64]int) bool {
+	if len(roundStartMoney) == 0 {
+		return false
+	}
+	for _, m := range roundStartMoney {
+		if m != 800 {
+			return false
+		}
+	}
+	return true
+}
+
+// defaultPistols are the free pistols everyone spawns with — holding one
+// says nothing about the buy.
+var defaultPistols = map[common.EquipmentType]bool{
+	common.EqGlock: true,
+	common.EqUSP:   true,
+	common.EqP2000: true,
+}
+
+// primaryWeapon returns the most meaningful weapon in the player's inventory
+// — the primary weapon (rifle / SMG / heavy) if present, otherwise a notable
+// (bought) pistol such as a Deagle or P250, or "" when they hold only a
+// default pistol or nothing. The bool reports whether they hold a
+// rifle-class weapon (EqClassRifle includes the AWP and SSG 08).
+func primaryWeapon(m *common.Player) (string, bool) {
+	var pistol *common.Equipment
+	for _, eq := range m.Inventory {
+		if eq == nil {
+			continue
+		}
+		switch eq.Class() {
+		case common.EqClassRifle:
+			return eq.String(), true
+		case common.EqClassSMG, common.EqClassHeavy:
+			return eq.String(), false
+		case common.EqClassPistols:
+			pistol = eq
+		}
+	}
+	if pistol != nil && !defaultPistols[pistol.Type] {
+		return pistol.String(), false
+	}
+	return "", false
+}
+
+// snapshotTeamEconomy captures a team's buy one frame after freeze time
+// ended, when all freeze-time-end property updates are flushed.
+//
+// CS2 gotchas this works around (verified against a GOTV demo):
+//   - Player.MoneySpentThisRound() does not reset between rounds
+//   - Player.EquipmentValueFreezeTimeEnd() is one round stale if read inside
+//     the RoundFreezetimeEnd handler itself
+//
+// Money at round start is captured separately on RoundStart (money lives on
+// the controller entity, so pawn recreation at round start doesn't affect
+// it); spent is then start money minus bank.
+func snapshotTeamEconomy(team *common.TeamState, pistol bool, roundStartMoney map[uint64]int, prevSurvivors map[uint64]bool) *TeamEconomy {
+	if team == nil {
+		return nil
+	}
+	var players []PlayerEconomy
+	totalEquip, totalSpent, survivors, rifles := 0, 0, 0, 0
+	for _, m := range team.Members() {
+		if m.SteamID64 == 0 && m.Name == "" {
+			continue // skip empty slots
+		}
+		if prevSurvivors[m.SteamID64] {
+			survivors++
+		}
+		start, ok := roundStartMoney[m.SteamID64]
+		if !ok {
+			// joined after round start — no start snapshot, best effort
+			start = m.Money()
+		}
+		bank := m.Money()
+		spent := start - bank
+		if spent < 0 {
+			spent = 0
+		}
+		weapon, hasRifle := primaryWeapon(m)
+		if hasRifle {
+			rifles++
+		}
+		pe := PlayerEconomy{
+			Name:       m.Name,
+			SteamId:    strconv.FormatUint(m.SteamID64, 10),
+			StartMoney: start,
+			Spent:      spent,
+			EquipValue: m.EquipmentValueCurrent(),
+			Bank:       bank,
+			Weapon:     weapon,
+			Armor:      m.Armor(),
+			Helmet:     m.HasHelmet(),
+			DefuseKit:  m.HasDefuseKit(),
+		}
+		players = append(players, pe)
+		totalEquip += pe.EquipValue
+		totalSpent += pe.Spent
+	}
+	if len(players) == 0 {
+		return nil
+	}
+	avg := totalEquip / len(players)
+	avgSpent := totalSpent / len(players)
+	// hero detection: exactly one player bought a real weapon (>= $1500 —
+	// rifle, scout or Deagle+armor territory) while the rest saved (< $1000),
+	// and the team isn't holding kept rifles
+	buyers, savers := 0, 0
+	for _, pe := range players {
+		if pe.Spent >= 1500 {
+			buyers++
+		} else if pe.Spent < 1000 {
+			savers++
+		}
+	}
+	hero := buyers == 1 && savers == len(players)-1 && avg < 3500
+	return &TeamEconomy{
+		Players:    players,
+		AvgEquip:   avg,
+		AvgSpent:   avgSpent,
+		TotalSpent: totalSpent,
+		Type:       buyType(pistol, hero, rifles, len(players), avg, avgSpent),
+		Rifles:     rifles,
+		Survivors:  survivors,
+	}
+}
+
+// captureRoundEconomy builds the economy snapshot for the current round from
+// the live game state.
+func captureRoundEconomy(gs dem.GameState, roundStartMoney map[uint64]int, prevSurvivors map[uint64]bool) *RoundEconomy {
+	pistol := pistolRound(roundStartMoney)
+	return &RoundEconomy{
+		CT: snapshotTeamEconomy(gs.TeamCounterTerrorists(), pistol, roundStartMoney, prevSurvivors),
+		T:  snapshotTeamEconomy(gs.TeamTerrorists(), pistol, roundStartMoney, prevSurvivors),
+	}
 }
 
 type KillEvent struct {
@@ -221,6 +428,10 @@ func ParseDemo(demoId string, filePath string) Game {
 	roundKills := map[int][]KillEvent{}
 	currentRound := -1
 	matchStarted := false
+	pendingEconomy := map[int]*RoundEconomy{} // economy waiting for its round struct to exist
+	roundStartMoney := map[uint64]int{}       // bank at round start, before buys
+	prevSurvivors := map[uint64]bool{}        // players alive at the previous RoundEnd (they keep their weapons)
+	economyPending := false                   // freeze ended; capture economy on the next frame
 	smokes := map[int]SmokeState{}
 	flashes := map[int]FlashState{}
 	hes := map[int]HEState{}
@@ -308,10 +519,26 @@ func ParseDemo(demoId string, filePath string) Game {
 		tScore = p.GameState().TeamTerrorists().Score()
 		ctScore = p.GameState().TeamCounterTerrorists().Score()
 
+		// The buy phase just ended (see the RoundFreezetimeEnd handler): capture
+		// the economy now, one frame later, when all property updates are
+		// flushed.
+		if economyPending {
+			economyPending = false
+			econ := captureRoundEconomy(p.GameState(), roundStartMoney, prevSurvivors)
+			if round < len(rounds) {
+				rounds[round].Economy = econ
+			} else {
+				pendingEconomy[round] = econ
+			}
+		}
+
 		if len(rounds) <= round {
+			econ := pendingEconomy[round]
+			delete(pendingEconomy, round)
 			rounds = append(rounds, Round{
-				Round: &round,
-				Kills: roundKills[round],
+				Round:   &round,
+				Kills:   roundKills[round],
+				Economy: econ,
 			})
 		}
 		frames := rounds[round].Frames
@@ -453,6 +680,10 @@ func ParseDemo(demoId string, filePath string) Game {
 		// Discard the knife round so the first real round overwrites it.
 		rounds = []Round{}
 		roundKills = map[int][]KillEvent{}
+		pendingEconomy = map[int]*RoundEconomy{}
+		roundStartMoney = map[uint64]int{}
+		prevSurvivors = map[uint64]bool{}
+		economyPending = false
 		currentRound = -1
 		matchStarted = true
 	})
@@ -516,6 +747,12 @@ func ParseDemo(demoId string, filePath string) Game {
 		// fmt.Println("New round ------------------------------------------------------ ")
 		if matchStarted {
 			currentRound++
+			// Money lives on the controller entity and is already updated with
+			// round rewards by now: snapshot the bank before any buys.
+			roundStartMoney = map[uint64]int{}
+			for _, m := range p.GameState().Participants().Playing() {
+				roundStartMoney[m.SteamID64] = m.Money()
+			}
 		}
 		// CS2 lets players plant the bomb (and throw nades) after RoundEnd,
 		// during the round-over period. Reset all transient state here so a
@@ -533,6 +770,18 @@ func ParseDemo(demoId string, filePath string) Game {
 	})
 	p.RegisterEventHandler(func(e events.RoundEnd) {
 		// fmt.Println("Round ended ------------------------------------------------------ ")
+
+		// Players alive right now keep their weapons into the next round.
+		// (Deaths during the round-over period, after RoundEnd, are rare and
+		// would incorrectly count as survivors — accepted inaccuracy.)
+		if matchStarted {
+			prevSurvivors = map[uint64]bool{}
+			for _, m := range p.GameState().Participants().Playing() {
+				if m.SteamID64 != 0 && m.IsAlive() {
+					prevSurvivors[m.SteamID64] = true
+				}
+			}
+		}
 
 		winner := ""
 		if e.Winner == common.TeamTerrorists {
@@ -556,6 +805,15 @@ func ParseDemo(demoId string, filePath string) Game {
 		}
 	})
 
+	p.RegisterEventHandler(func(e events.RoundFreezetimeEnd) {
+		// Freeze time is over and the buy phase is done. The economy is captured
+		// one frame later (see the FrameDone handler) because reading
+		// equipment properties inside this handler returns stale values in
+		// CS2 demos.
+		if matchStarted && currentRound >= 0 {
+			economyPending = true
+		}
+	})
 	p.RegisterEventHandler(func(e events.WeaponFire) {
 		// fmt.Println(e.Shooter)
 		if e.Shooter != nil {

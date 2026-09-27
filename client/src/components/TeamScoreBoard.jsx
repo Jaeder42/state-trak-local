@@ -2,7 +2,12 @@ import { Weapon } from "./Weapon";
 
 const MIN_ROWS = 5;
 
-export const TeamScoreBoard = ({ teamScores, onSelectPlayer, focusPlayer }) => {
+export const TeamScoreBoard = ({
+  teamScores,
+  onSelectPlayer,
+  focusPlayer,
+  mySteamId,
+}) => {
   const players = teamScores || [];
   const rows = [...players];
   while (rows.length < MIN_ROWS) {
@@ -25,7 +30,10 @@ export const TeamScoreBoard = ({ teamScores, onSelectPlayer, focusPlayer }) => {
         <tbody>
           {rows.map((player, i) =>
             player ? (
-              <tr key={player.steamId || player.name}>
+              <tr
+                key={player.steamId || player.name}
+                className={player.steamId === mySteamId ? "me" : ""}
+              >
                 <td
                   className={`player-name ${
                     focusPlayer === player.steamId ? "focused" : ""
@@ -35,6 +43,9 @@ export const TeamScoreBoard = ({ teamScores, onSelectPlayer, focusPlayer }) => {
                   <span className="player-name-cell">
                     <Weapon weapon={player.weapon} />
                     {player.name}
+                    {player.steamId === mySteamId && (
+                      <span className="you-tag">(you)</span>
+                    )}
                   </span>
                 </td>
                 <td>{player.kills}</td>
