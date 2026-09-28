@@ -30,7 +30,6 @@ export const FilterMenu = ({
           {item("names", "Player names")}
           {item("health", "Health bars")}
           {item("trails", "Player trails")}
-          {item("teamFocus", "Focus my team (dim enemies)")}
           {item("theater", "Theater mode (hide scoreboard)")}
           <div className="steam-id-setting">
             <span className="steam-id-label">My Steam ID</span>

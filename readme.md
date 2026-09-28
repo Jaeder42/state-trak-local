@@ -3,6 +3,46 @@ Backend for fetching game info from demos
 
 Uses [DemoInfoCs](https://github.com/markus-wa/demoinfocs-golang)
 
+## Standalone usage
+
+The whole app is one self-contained binary (UI embedded via `go:embed`,
+demo parsing is local, data lives under `./controllers/data`). Anyone can run
+it on their own machine — no server, no operator, no shared keys:
+
+    make release          # pure-Go cross-compiled binaries (browser mode)
+    make desktop          # Wails desktop app (.app / window; see below)
+    ./statetrak           # or: ./statetrak -addr=:3007 -data=~/statetrak-data
+
+## Desktop app (Wails) vs browser
+
+`make desktop` packages the whole thing as a real desktop app
+(`desktop/build/bin/StateTrak.app` on macOS — window, dock icon, closing it
+quits; `make dmg` also produces `release/StateTrak.dmg`). The app runs the
+same gin API + embedded React UI in-process through Wails' asset server —
+the client keeps using plain `fetch()`, with every non-asset request falling
+through to the gin router. Data goes to `~/Library/Application Support/StateTrak`
+(`-data` overrides) since a Finder-launched app has no usable working dir.
+
+Needs the wails CLI once:
+
+    go install github.com/wailsapp/wails/v2/cmd/wails@v2.16.0
+
+Windows/Linux builds need the platform webview SDKs and are built natively
+(`cd desktop && wails build`); the `release/` cross-compile targets stay
+pure Go and open the default browser instead. `STATETRAK_NO_OPEN=1`
+suppresses the browser (dev/server flows; set in `make run` and
+`deploy/statetrak.service`).
+
+On start the default browser opens automatically (opt out with
+`STATETRAK_NO_OPEN=1`, e.g. on headless servers). Each user brings their own
+keys via the in-app **🔑 settings panel** (stored in the browser, sent per
+request — never saved server-side):
+
+- **TypeSafe (JEV)** key for `/demos/:id/analysis`
+- **LLM** — any OpenAI-compatible endpoint (base URL + model + key), powering
+  the “AI coach” review: OpenAI, a gateway, or a local Ollama at
+  `http://localhost:11434/v1`
+
 ## Usage
 
 Build & run (compiles the React client into the binary, listens on `:3007`):
@@ -24,8 +64,8 @@ Parse a demo offline without starting the server (writes JSON to
 The viewer orients around **your team**: the settings panel (⚙) stores your
 Steam ID in localStorage (defaulting to the owner's account,
 `client/src/utils/me.js`). With it set, the scoreboard puts your team first
-("YOUR TEAM" / "ENEMY") and highlights your row, the radar dims enemy players
-("Focus my team" filter) and draws a halo around your own dot, the kill feed
+("YOUR TEAM" / "ENEMY") and highlights your row, the radar draws a halo
+around your own dot, the kill feed
 and timeline mark your team's kills green and teammate deaths red, and the
 round bar colors rounds win/loss from your perspective. Demos parsed before
 the roster field shipped lack per-round team info and fall back to the old
@@ -52,7 +92,8 @@ The key can also live in a `.env` file in the repo root (`TYPESAFE_API_KEY=...`)
 | `DELETE /demos/:id` | delete upload + output |
 | `GET /demos/:id/output` | game metadata (map, players, frame rate) |
 | `GET /demos/:id/rounds` | round list with winners, per-team buy types and per-team rosters (steam ids, from the round's economy snapshot) |
-| `GET /demos/:id/analysis` | JEV buy-type analysis per round (cached after the first call; needs `TYPESAFE_API_KEY`) |
+| `GET /demos/:id/analysis` | JEV buy-type analysis per round (cached after the first call; key bring-your-own via `X-TypeSafe-Key` header, server env as fallback) |
+| `POST /demos/:id/coach` | AI coach review for one player's team — server assembles demo context (rounds, buys, post-plant) and calls the OpenAI-compatible LLM from the request body; key never persisted |
 | `GET /demos/:id/postplant` | post-plant positioning per planted round — T setups (spread, distance to bomb, movement), CT retake entries (timing, grouping), and how each correlates with the outcome (cached after the first call). The panel also writes out good/bad pattern bullets for a chosen player's team (`client/src/utils/postplantText.js`) |
 | `GET /demos/:id/:round` | full per-frame data for one round |
 | `GET /ping` | health check |
@@ -66,7 +107,8 @@ startup, real env vars win):
 
 | Variable | Default | Description |
 | --- | --- | --- |
-| `TYPESAFE_API_KEY` | — | JEV analysis key (https://console.typesafe.ai). Required for `-jev` live runs and `/demos/:id/analysis` |
+| `TYPESAFE_API_KEY` | — | JEV analysis key (https://console.typesafe.ai). Server-side fallback for `-jev` and `/demos/:id/analysis` — a per-request `X-TypeSafe-Key` header (🔑 app settings) wins |
+| `STATETRAK_NO_OPEN` | — | set to `1` to not open the browser on startup (headless servers; set in `deploy/statetrak.service`) |
 | `UPLOAD_MAX_BYTES` | `1073741824` | max `.dem` upload size |
 | `PARSE_CONCURRENCY` | `1` | concurrent demo parses (each parse is RAM-heavy) |
 | `ALLOWED_ORIGIN` | — | enable CORS for one origin; the embedded client is same-origin and needs nothing |
@@ -150,7 +192,10 @@ and compares its judgment against the baseline.
 ## Project layout
 
 ```
-main.go              Gin server, routes, -parse flag
+main.go              server entry: flags (-parse/-jev/-addr/-data), browser auto-open
+server/router.go     the gin router (API routes + SPA fallback) — shared with the desktop app
+web/web.go           embeds client build (web/dist): Dist() fs + SPA handler
+desktop/             Wails desktop app (main.go, wails.json, build/ scaffold)
 controllers/
   demo.go            upload/list/status/delete, status persistence
   game.go            ParseDemo(): demo -> JSON round files

@@ -1,0 +1,14 @@
+{
+  "$schema": "https://wails.io/schemas/config.v2.schema.json",
+  "name": "StateTrak",
+  "outputfilename": "StateTrak",
+  "frontend:dir": "client",
+  "frontend:install": "true",
+  "frontend:build": "true",
+  "frontend:dev:watcherUrl": "",
+  "info": {
+    "productName": "StateTrak",
+    "productVersion": "1.0.0",
+    "comments": "CS2 demo replay analyzer"
+  }
+}

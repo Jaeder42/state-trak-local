@@ -33,13 +33,29 @@ var (
 )
 
 const (
-	uploadDir = "./controllers/data/uploads"
-	outputDir = "./controllers/data/output"
+	defaultUploadDir = "./controllers/data/uploads"
+	defaultOutputDir = "./controllers/data/output"
 
 	defaultUploadMaxBytes = 1 << 30 // 1 GB
 )
 
-func init() {
+// Actual data locations. Defaults keep the repo layout; standalone binaries
+// can relocate them via SetDataDir (-data flag) before Init() runs.
+var (
+	uploadDir = defaultUploadDir
+	outputDir = defaultOutputDir
+)
+
+// SetDataDir moves uploads + parse output under one root directory.
+func SetDataDir(dir string) {
+	uploadDir = filepath.Join(dir, "uploads")
+	outputDir = filepath.Join(dir, "output")
+}
+
+// Init prepares the data dirs and the persisted demo list. Called from
+// main (after flag parsing) instead of an init() so that -data can take
+// effect first.
+func Init() {
 	if err := os.MkdirAll(uploadDir, 0755); err != nil {
 		panic(err)
 	}

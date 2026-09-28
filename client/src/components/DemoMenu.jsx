@@ -7,11 +7,13 @@ export const DemoMenu = ({
   uploadProgress,
   analysisRunning,
   postplantRunning,
+  coachRunning,
   onSelectDemo,
   onUpload,
   onDeleteDemo,
   onRunAnalysis,
   onRunPostPlant,
+  onRunCoach,
 }) => {
   const [open, setOpen] = useState(false);
   const fileInputRef = useRef(null);
@@ -62,6 +64,14 @@ export const DemoMenu = ({
                 />
               </div>
             </div>
+          )}
+          {demoId && (
+            <button
+              onClick={() => onRunCoach(demoId)}
+              disabled={coachRunning}
+            >
+              {coachRunning ? "Coach thinking…" : "AI coach (your LLM)"}
+            </button>
           )}
           {demoId && (
             <button

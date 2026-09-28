@@ -6,12 +6,17 @@ import { RoundSelector } from "./RoundSelector.jsx";
 import { DemoMenu } from "./DemoMenu.jsx";
 import { AnalysisPanel } from "./AnalysisPanel.jsx";
 import { PostPlantPanel } from "./PostPlantPanel.jsx";
+import { SettingsMenu } from "./SettingsMenu.jsx";
+import { CoachPanel } from "./CoachPanel.jsx";
+import { getSetting, getLLMConfig, llmConfigured } from "../utils/settings";
 import { FilterMenu } from "./FilterMenu.jsx";
 import { mapDisplayName } from "../maps/config";
 import { getMySteamId, setMySteamId as persistMySteamId } from "../utils/me";
 
 const API = "";
 const TICK_MS = 16; // ~60fps playback at 1x
+const BANNER = process.env.PUBLIC_URL + "/logo.png";
+const ICON = process.env.PUBLIC_URL + "/statetrak.png";
 
 export const Games = () => {
   const [demos, setDemos] = useState([]);
@@ -28,6 +33,7 @@ export const Games = () => {
   const [uploading, setUploading] = useState(false);
   const [analysis, setAnalysis] = useState(null); // { loading } | { data }
   const [postplant, setPostplant] = useState(null); // { loading } | { data }
+  const [coach, setCoach] = useState(null); // { loading } | { text, model }
   const [uploadProgress, setUploadProgress] = useState(null);
   const [toast, setToast] = useState(null);
   const [filters, setFilters] = useState({
@@ -35,7 +41,6 @@ export const Games = () => {
     names: true,
     trails: true,
     theater: false,
-    teamFocus: true, // dim enemy players on the radar
   });
   const [mySteamId, setMySteamIdState] = useState(() => getMySteamId());
   const toastTimer = useRef(null);
@@ -104,6 +109,7 @@ export const Games = () => {
     setLoading(true);
     setAnalysis(null);
     setPostplant(null);
+    setCoach(null);
     pendingIndexRef.current = null;
     fetchMeta(demoId);
     fetchRounds(demoId);
@@ -169,18 +175,49 @@ export const Games = () => {
   };
 
   // JEV round analysis: first run takes a few seconds (cached server-side
-  // afterwards, so everyone shares one analysis per demo).
+  // afterwards, so everyone shares one analysis per demo). Uses the user's
+  // own TypeSafe key (🔑 settings) when set, else the server's env key.
   const runAnalysis = async () => {
     if (!demoId) return;
     setAnalysis({ loading: true });
     try {
-      const res = await fetch(`${API}/demos/${demoId}/analysis`);
+      const headers = {};
+      const jevKey = getSetting("jevKey");
+      if (jevKey) headers["X-TypeSafe-Key"] = jevKey;
+      const res = await fetch(`${API}/demos/${demoId}/analysis`, { headers });
       const json = await res.json();
       if (!res.ok) throw new Error(json.error || `HTTP ${res.status}`);
       setAnalysis({ loading: false, data: json });
     } catch (err) {
       setAnalysis(null);
       showToast("JEV analysis failed: " + err.message);
+    }
+  };
+
+  // AI coach: sends the user's own LLM config (🔑 settings) plus the demo
+  // id; the server assembles the context and calls the provider.
+  const runCoach = async () => {
+    if (!demoId) return;
+    if (!llmConfigured()) {
+      showToast("Add your LLM provider in the 🔑 settings first");
+      return;
+    }
+    setCoach({ loading: true });
+    try {
+      const res = await fetch(`${API}/demos/${demoId}/coach`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          llm: getLLMConfig(),
+          steamId: mySteamId,
+        }),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || `HTTP ${res.status}`);
+      setCoach({ loading: false, text: json.text, model: json.model });
+    } catch (err) {
+      setCoach(null);
+      showToast("AI coach failed: " + err.message);
     }
   };
 
@@ -386,11 +423,13 @@ export const Games = () => {
         uploadProgress={uploadProgress}
         analysisRunning={!!analysis?.loading}
         postplantRunning={!!postplant?.loading}
+        coachRunning={!!coach?.loading}
         onSelectDemo={setDemoId}
         onUpload={onUpload}
         onDeleteDemo={deleteDemo}
         onRunAnalysis={runAnalysis}
         onRunPostPlant={runPostPlant}
+        onRunCoach={runCoach}
       />
 
       {analysis?.data && (
@@ -412,15 +451,29 @@ export const Games = () => {
         />
       )}
 
+      {coach?.text && (
+        <CoachPanel
+          text={coach.text}
+          model={coach.model}
+          onClose={() => setCoach(null)}
+        />
+      )}
+
       {toast && <div className="toast">{toast}</div>}
 
       {!demoId ? (
-        <div className="empty-state">Upload or select a demo to begin</div>
+        <div className="empty-state">
+          <img className="splash-logo" src={BANNER} alt="StateTrak" />
+          <p>Upload or select a demo to begin</p>
+        </div>
       ) : loading ? (
         <div className="empty-state">…loading</div>
       ) : (
         <>
-          <h1>{mapDisplayName(metaData.map)}</h1>
+          <h1 className="map-title">
+            <img className="map-logo" src={ICON} alt="" />
+            {mapDisplayName(metaData.map)}
+          </h1>
           <div className={`main-layout ${filters.theater ? "theater" : ""}`}>
             <ScoreBoardPanel
               frame={sbFrame}
@@ -441,6 +494,7 @@ export const Games = () => {
               onSelectPlayer={selectPlayer}
               mySteamId={mySteamId}
               myTeam={myTeam}
+              backdrop={BANNER}
             />
           </div>
           <Controls
@@ -456,6 +510,7 @@ export const Games = () => {
               onMySteamIdChange={changeMySteamId}
               myTeamActive={!!myTeam}
             />
+            <SettingsMenu />
           </Controls>
 
           <RoundSelector

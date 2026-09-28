@@ -71,12 +71,12 @@ type JevResponse struct {
 	Usage   JevUsage             `json:"usage"`
 }
 
-// jevEvaluate sends one state + question batch to JEV. Retries once on
-// rate-limit / overload responses and transient network errors.
-func jevEvaluate(state string, questions map[string]JevQuestion) (*JevResponse, error) {
-	key := os.Getenv("TYPESAFE_API_KEY")
+// jevEvaluate sends one state + question batch to JEV using the given key
+// (per-request "bring your own" key, or the env var for the CLI). Retries
+// once on rate-limit / overload responses and transient network errors.
+func jevEvaluate(key, state string, questions map[string]JevQuestion) (*JevResponse, error) {
 	if key == "" {
-		return nil, fmt.Errorf("TYPESAFE_API_KEY not set")
+		return nil, fmt.Errorf("no JEV key")
 	}
 	body, err := json.Marshal(map[string]any{
 		"state":     state,
@@ -284,7 +284,7 @@ type Analysis struct {
 // analyzeDemoRounds loads a parsed demo, builds one state per round and runs
 // the JEV question batch. Shared by the CLI (-jev) and the /analysis route.
 // Returns the JSON-ready Analysis plus per-round detail (states) for the CLI.
-func analyzeDemoRounds(demoId string) (*Analysis, []jevReport, error) {
+func analyzeDemoRounds(demoId, key string) (*Analysis, []jevReport, error) {
 	dir := demoDir(demoId)
 	outData, err := os.ReadFile(filepath.Join(dir, "output.json"))
 	if err != nil {
@@ -323,7 +323,7 @@ func analyzeDemoRounds(demoId string) (*Analysis, []jevReport, error) {
 		return nil, nil, fmt.Errorf("no round has economy data — re-parse the demo with the current build to capture it")
 	}
 
-	dry := os.Getenv("TYPESAFE_API_KEY") == ""
+	dry := key == ""
 	questions := economyQuestions()
 
 	// Scores before each round, derived from previous round winners.
@@ -351,7 +351,7 @@ func analyzeDemoRounds(demoId string) (*Analysis, []jevReport, error) {
 			tStreak := lossStreak(rounds, i, "T")
 			rep.state = buildEconomyState(out.Map, i, scoreCT, scoreT, ctStreak, tStreak, recentWinners, r.Economy)
 			if !dry && !jevDown {
-				jev, err := jevEvaluate(rep.state, questions)
+				jev, err := jevEvaluate(key, rep.state, questions)
 				if err != nil {
 					rep.jevError = err
 					// auth/config errors won't heal mid-run — stop calling JEV
@@ -411,7 +411,7 @@ func teamAnalysis(t *TeamEconomy, rep jevReport, side string) *TeamAnalysis {
 // AnalyzeEconomy is the -jev CLI entry point: prints the per-round baseline
 // vs JEV comparison to stdout.
 func AnalyzeEconomy(demoId string) error {
-	analysis, reports, err := analyzeDemoRounds(demoId)
+	analysis, reports, err := analyzeDemoRounds(demoId, os.Getenv("TYPESAFE_API_KEY"))
 	if err != nil {
 		return err
 	}
@@ -519,7 +519,9 @@ var analysisInflight sync.Map // demoId -> chan struct{}
 
 // GetAnalysis serves GET /demos/:id/analysis. The first request runs the JEV
 // analysis (a few seconds) and caches it as analysis.json in the demo's
-// output dir — JEV is billed once per demo. Later requests serve the cache.
+// output dir — JEV is billed once per demo (to whoever ran it first). Later
+// requests serve the cache. The key is bring-your-own: the X-TypeSafe-Key
+// request header wins, TYPESAFE_API_KEY is the server-side fallback.
 func GetAnalysis(c *gin.Context) {
 	id := c.Param("id")
 	dir := demoDir(id)
@@ -533,8 +535,12 @@ func GetAnalysis(c *gin.Context) {
 		c.JSON(404, gin.H{"error": "demo not found"})
 		return
 	}
-	if os.Getenv("TYPESAFE_API_KEY") == "" {
-		c.JSON(503, gin.H{"error": "TYPESAFE_API_KEY not set — JEV analysis is not configured"})
+	key := strings.TrimSpace(c.GetHeader("X-TypeSafe-Key"))
+	if key == "" {
+		key = os.Getenv("TYPESAFE_API_KEY")
+	}
+	if key == "" {
+		c.JSON(503, gin.H{"error": "no JEV key — add your TypeSafe key in the app settings (🔑) or set TYPESAFE_API_KEY on the server"})
 		return
 	}
 
@@ -556,7 +562,7 @@ func GetAnalysis(c *gin.Context) {
 		analysisInflight.Delete(id)
 		close(ch)
 	}()
-	analysis, _, err := analyzeDemoRounds(id)
+	analysis, _, err := analyzeDemoRounds(id, key)
 	if err != nil {
 		c.JSON(400, gin.H{"error": err.Error()})
 		return

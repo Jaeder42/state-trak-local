@@ -11,6 +11,8 @@ web/dist/*
 # Generated data
 controllers/data/
 node_modules/
+release/
+desktop/build/bin/
 
 # OS junk
 .DS_Store

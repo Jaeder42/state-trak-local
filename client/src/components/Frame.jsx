@@ -20,6 +20,7 @@ export const Frame = ({
   onSelectPlayer,
   mySteamId,
   myTeam,
+  backdrop,
 }) => {
   const canvasRef = useRef(null);
   const containerRef = useRef(null);
@@ -134,10 +135,6 @@ export const Frame = ({
         alpha = Math.max(0.2, 1 - age / DEAD_FADE_FRAMES);
       }
     }
-    // "Focus my team": keep my team at full strength, fade out the enemy.
-    if (filters.teamFocus && myTeam && team && team !== myTeam && alive) {
-      alpha *= 0.35;
-    }
 
     ctx.save();
     ctx.globalAlpha = alpha;
@@ -219,16 +216,13 @@ export const Frame = ({
       if (!hist) return;
       const start = Math.max(0, index - TRAIL_FRAMES);
       const color = p.team === "CT" ? "#68a3e5" : "#e6f13d";
-      // dim enemy trails to match the "focus my team" dot fading
-      const dim =
-        filters.teamFocus && myTeam && p.team && p.team !== myTeam ? 0.35 : 1;
       ctx.strokeStyle = color;
       ctx.lineWidth = 2;
       for (let i = start + 1; i <= index; i++) {
         const a = hist[i - 1];
         const b = hist[i];
         if (!a || !b || !b.alive) continue;
-        ctx.globalAlpha = ((i - start) / TRAIL_FRAMES) * 0.4 * dim;
+        ctx.globalAlpha = ((i - start) / TRAIL_FRAMES) * 0.4;
         const pa = transformPos(a.x, a.y);
         const pb = transformPos(b.x, b.y);
         ctx.beginPath();
@@ -335,10 +329,8 @@ export const Frame = ({
     const { x, y } = transformPos(smoke.position.x, smoke.position.y);
     const radius = worldRadiusToPixels(180);
 
-    const gradient = ctx.createRadialGradient(x, y, radius * 0.2, x, y, radius);
-    gradient.addColorStop(0, "rgba(180, 180, 180, 0.55)");
-    gradient.addColorStop(1, "rgba(120, 120, 120, 0.15)");
-    ctx.fillStyle = gradient;
+    // solid gray blob, like the CS2 radar smoke — no gradient falloff
+    ctx.fillStyle = "rgba(140, 140, 140, 0.75)";
     ctx.beginPath();
     ctx.arc(x, y, radius, 0, 2 * Math.PI);
     ctx.fill();
@@ -611,7 +603,14 @@ export const Frame = ({
         onTouchMove={onTouchMove}
         onTouchEnd={onTouchEnd}
       >
+        <img
+          className="map-backdrop"
+          src={backdrop}
+          alt=""
+          aria-hidden="true"
+        />
         <canvas
+          className="radar-canvas"
           height={displaySize.height}
           width={displaySize.width}
           ref={canvasRef}

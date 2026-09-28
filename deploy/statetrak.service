@@ -7,6 +7,8 @@ User=statetrak
 Group=statetrak
 WorkingDirectory=/opt/statetrak
 Environment=GIN_MODE=release
+# No browser to open on a headless server
+Environment=STATETRAK_NO_OPEN=1
 # .env: TYPESAFE_API_KEY (JEV analysis) and optionally
 #       UPLOAD_MAX_BYTES, PARSE_CONCURRENCY, ALLOWED_ORIGIN
 # .env is dash-prefixed so a missing file doesn't block startup

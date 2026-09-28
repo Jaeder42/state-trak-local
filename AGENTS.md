@@ -11,21 +11,28 @@ agent-facing cheat sheet.
 ## Commands
 
 ```sh
-make                 # build client -> copy to web/dist -> go build (binary: ./statetrak)
-make run             # build, kill whatever holds :3007, run
+make                 # build client -> copy to web/dist -> go build (server binary, browser mode)
+make run             # build, kill whatever holds :3007, run (STATETRAK_NO_OPEN=1 — nothing pops)
 make client          # client build only (npm install first on a fresh clone)
-make clean           # remove binary + web/dist
+make clean           # remove binary + web/dist + release/ + desktop/build/bin
+make release         # pure-Go cross-compiled binaries into release/ (browser mode, gitignored)
+make desktop         # Wails desktop app -> desktop/build/bin/StateTrak.app (needs the wails CLI)
+make dmg             # make desktop + release/StateTrak.dmg
 
 go vet ./...         # static analysis
 gofmt -l .           # must be empty before committing (tabs, gofmt style)
 
 go run . -parse=test.dem   # offline parse, writes controllers/data/output/local/
 go run . -jev=local        # JEV economy analysis of a parsed demo (TYPESAFE_API_KEY from env or .env; dry run without it)
+./statetrak -addr=:3011 -data=/some/dir   # standalone run: custom port/data dir, opens the browser
 ```
 
 A plain `go build .` works on a fresh clone (a tracked `web/dist/.gitkeep`
-keeps `go:embed` valid) but serves no UI until `make client` has run.
-The server listens on **:3007**.
+keeps `go:embed` valid) but serves no UI until `make client` has run —
+it builds the plain server (browser mode). The server listens on **:3007**
+(`-addr` to override) and opens the default browser on startup unless
+`STATETRAK_NO_OPEN=1`. The packaged desktop app is built separately with
+`make desktop` (Wails).
 
 ## Verifying changes end-to-end
 
@@ -80,9 +87,10 @@ client        -> fetches /demos/:id/output (metadata), /demos/:id/:round
   analyzer, shared by two entry points: the `-jev` CLI flag (prints a
   baseline vs JEV comparison) and `GET /demos/:id/analysis` (runs the same
   analysis, caches it as `analysis.json` in the demo's output dir so JEV is
-  billed once per demo, single-flighted per demo id). Needs
-  `TYPESAFE_API_KEY` for live runs; the CLI falls back to a dry run without
-  it, the route returns 503.
+  billed once per demo, single-flighted per demo id). The key is
+  bring-your-own: `X-TypeSafe-Key` request header (🔑 client settings) wins,
+  `TYPESAFE_API_KEY` env is the fallback; a bad key degrades stickily to
+  baseline-only results (by design).
 - `controllers/postplant.go` — deterministic post-plant analysis
   (`/demos/:id/postplant`, no key needed): per planted round, T setup
   positions at plant+5s (spread, distance to bomb), movement +5s→+15s,
@@ -94,19 +102,33 @@ client        -> fetches /demos/:id/output (metadata), /demos/:id/:round
   `planted:false` frames, while a phantom run reaches the round's last
   frame. Don't use the frame `phase` for this: the LIVE heuristic
   (`GamePhase()==2`) never fires in the second half of CS2 demos.
+- `controllers/coach.go` — "AI coach" (`POST /demos/:id/coach`): the client
+  sends its own OpenAI-compatible LLM config (base URL + model + key, from
+  the 🔑 settings in localStorage — works with OpenAI, gateways, local
+  Ollama), the server assembles a compact context (map, rounds/buys/rosters,
+  post-plant analysis, player sides) and proxies to
+  `{baseUrl}/chat/completions`. Keys are per-request only — never logged,
+  cached or persisted. Bad LLM key → 502 with the provider's error.
 - `controllers/demo.go` — upload/list/status/delete routes, in-memory
-  `demoStatus` map, `meta.json` persistence, `loadPersistedDemos()` on startup.
+  `demoStatus` map, `meta.json` persistence, `loadPersistedDemos()` on
+  startup. No package `init()`: `main` calls `controllers.Init()` after
+  flag parsing, so `-data`/`SetDataDir` can relocate the upload/output dirs
+  first (defaults keep `./controllers/data`).
 - `controllers/round.go` — round-serving routes; `/demos/:id/rounds`
   summaries include each team's roster steam ids (from the round's economy
   snapshot) so the client knows which side "my" player was on per round
   (teams swap at halftime).
-- `web/web.go` — `go:embed` of `web/dist` + SPA fallback route.
+- `web/web.go` — `go:embed` of `web/dist`: `Dist()` fs for asset servers + SPA fallback route.
+- `server/router.go` — the gin router (API routes + SPA fallback), shared by
+  the standalone server (`main.go`) and the Wails desktop app (`desktop/`).
+- `desktop/` — Wails v2 desktop app: native window running the same router
+  in-process via the asset server (`make desktop`, `make dmg`).
 - `client/` — Create React App (`react-scripts`, plain JS, no TS). Components
   in `src/components/`, weapon icons in `src/utils/weapons.js`, radar maps +
   per-map config in `src/maps/`. The viewer focuses on the demo owner's team:
   `src/utils/me.js` holds "my" Steam ID (localStorage, default = owner),
   scoreboard/kill feed/radar/round bar orient around it (YOUR TEAM first,
-  enemy dimming, win/loss round colors) — falls back to neutral coloring
+  win/loss round colors) — falls back to neutral coloring
   when the steam id isn't in the demo or the demo predates rosters.
   The post-plant panel adds a deterministic good/bad-pattern narrative for
   a chosen player's team (`src/utils/postplantText.js`): sides per round
@@ -158,6 +180,17 @@ client        -> fetches /demos/:id/output (metadata), /demos/:id/:round
   (which carry warmup leftovers in round 0).
 - `FrameRate` in `output.json` is hardcoded 60 (real value unavailable for
   CS2, same header issue as above). Client playback speed depends on it.
+- **The desktop app is a Wails build in `desktop/`** — same module, its own
+  `main` package. It plugs the shared `server.NewRouter()` into Wails'
+  asset server (`Assets: web.Dist()`, `Handler: router`): UI assets come
+  from the embedded build, every other request falls through to the gin
+  routes, so the React client's `fetch()` calls work unchanged (no Wails
+  bindings). Keep the wails CLI version in sync with the library
+  (go.mod pins `wails/v2 v2.16.0`; CLI: `go install .../cmd/wails@v2.16.0`).
+  The desktop app defaults its data dir to `~/Library/Application
+  Support/StateTrak` (`-data` overrides) because a Finder-launched app has
+  cwd=/. The `desktop/build/` scaffold (appicon, Info.plist) is committed;
+  `desktop/build/bin/` is gitignored.
 - Data model is 2D: positions keep x/y only, z is dropped by design.
 
 ## Conventions

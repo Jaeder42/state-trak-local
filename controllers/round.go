@@ -44,11 +44,21 @@ type RoundSummary struct {
 
 func GetRounds(c *gin.Context) {
 	demoId := c.Param("id")
-	dir := demoDir(demoId)
-	entries, err := os.ReadDir(dir)
+	summaries, err := loadRoundSummaries(demoDir(demoId))
 	if err != nil {
 		c.JSON(500, gin.H{"error": err.Error()})
 		return
+	}
+	c.JSON(200, summaries)
+}
+
+// loadRoundSummaries builds the round summaries (winner, buys, rosters) from
+// a demo's round files — shared by GET /demos/:id/rounds and the LLM coach
+// context.
+func loadRoundSummaries(dir string) ([]RoundSummary, error) {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return nil, err
 	}
 
 	var summaries []RoundSummary
@@ -98,6 +108,5 @@ func GetRounds(c *gin.Context) {
 	sort.Slice(summaries, func(i, j int) bool {
 		return summaries[i].Round < summaries[j].Round
 	})
-
-	c.JSON(200, summaries)
+	return summaries, nil
 }
