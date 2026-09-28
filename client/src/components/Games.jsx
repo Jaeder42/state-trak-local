@@ -12,6 +12,7 @@ import { getSetting, getLLMConfig, llmConfigured } from "../utils/settings";
 import { FilterMenu } from "./FilterMenu.jsx";
 import { mapDisplayName } from "../maps/config";
 import { getMySteamId, setMySteamId as persistMySteamId } from "../utils/me";
+import { toggleFullscreen } from "../utils/fullscreen";
 
 const API = "";
 const TICK_MS = 16; // ~60fps playback at 1x
@@ -348,6 +349,9 @@ export const Games = () => {
         e.preventDefault();
         setPlaying(false);
         setIndex((i) => Math.max(i - 1, 0));
+      } else if (e.key === "F11") {
+        e.preventDefault();
+        toggleFullscreen();
       } else if (e.key === "Escape") {
         setFocusPlayer(null);
       } else if (e.key === "," || e.key === "[") {
@@ -465,6 +469,7 @@ export const Games = () => {
         <div className="empty-state">
           <img className="splash-logo" src={BANNER} alt="StateTrak" />
           <p>Upload or select a demo to begin</p>
+          <SettingsMenu label="🔑 AI settings" />
         </div>
       ) : loading ? (
         <div className="empty-state">…loading</div>

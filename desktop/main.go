@@ -17,6 +17,7 @@ import (
 	"github.com/wailsapp/wails/v2"
 	"github.com/wailsapp/wails/v2/pkg/options"
 	"github.com/wailsapp/wails/v2/pkg/options/assetserver"
+	"github.com/wailsapp/wails/v2/pkg/options/mac"
 
 	"jaeder42.tech/state-trak-local/controllers"
 	"jaeder42.tech/state-trak-local/server"
@@ -54,6 +55,10 @@ func main() {
 			Handler: router,
 		},
 		Bind: []interface{}{}, // no bindings — the UI talks to the HTTP API
+		// Mac must be non-nil: wails v2.16 only initializes the zoomable flag
+		// inside the `Mac != nil` branch, and a nil Mac leaves it at 0, which
+		// disables the green maximize/fullscreen button on the window.
+		Mac: &mac.Options{},
 	})
 	if err != nil {
 		println("Error:", err.Error())

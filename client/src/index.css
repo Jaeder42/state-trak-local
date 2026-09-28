@@ -1141,9 +1141,32 @@ code {
 
 /* ---------- settings (bring your own keys) ---------- */
 
+.settings-toggle.labeled {
+  height: 40px;
+  padding: 0 18px;
+  border-radius: 20px;
+  border: 1px solid #444;
+  background-color: rgba(17, 17, 17, 0.85);
+  color: #ddd;
+  font-size: 13px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+}
+
+.settings-toggle.labeled:hover {
+  background-color: #222;
+  border-color: #666;
+}
+
 .settings-panel {
   min-width: 300px;
   right: -60px;
+}
+
+/* roughly centered under the labeled launcher on the empty state */
+.filter-menu:has(> .settings-toggle.labeled) .settings-panel {
+  right: -75px;
 }
 
 .settings-section {

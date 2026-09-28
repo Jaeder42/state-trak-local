@@ -191,6 +191,11 @@ client        -> fetches /demos/:id/output (metadata), /demos/:id/:round
   Support/StateTrak` (`-data` overrides) because a Finder-launched app has
   cwd=/. The `desktop/build/` scaffold (appicon, Info.plist) is committed;
   `desktop/build/bin/` is gitignored.
+- **`Mac: &mac.Options{}` in the wails options must stay non-nil** — wails
+  v2.16 initializes the darwin `zoomable` flag only inside its `Mac != nil`
+  branch; with a nil Mac it stays 0 and the frontend disables the green
+  maximize/fullscreen button (`standardWindowButton:NSWindowZoomButton
+  setEnabled:NO`). Don't "clean up" that empty-looking option away.
 - Data model is 2D: positions keep x/y only, z is dropped by design.
 
 ## Conventions

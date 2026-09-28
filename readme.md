@@ -13,6 +13,74 @@ it on their own machine — no server, no operator, no shared keys:
     make desktop          # Wails desktop app (.app / window; see below)
     ./statetrak           # or: ./statetrak -addr=:3007 -data=~/statetrak-data
 
+## Building
+
+Prerequisites:
+
+- **Go 1.25+** (per `go.mod`)
+- **Node 18+ with npm** — on a fresh clone run `npm install` inside `client/`
+  once. Every `make` target builds the React client (`npm run build`) and
+  embeds it into the binary via `web/dist` + `go:embed` — the client build is
+  not committed
+- **Wails CLI**, only for `make desktop` / `make dmg` — keep it in sync with
+  the `wails/v2` version pinned in `go.mod`:
+
+      go install github.com/wailsapp/wails/v2/cmd/wails@v2.16.0
+
+Targets:
+
+| Target | Produces | Notes |
+| --- | --- | --- |
+| `make` | `./statetrak` | server binary, browser mode, UI embedded |
+| `make run` | — | `make` + restart on :3007 (no window/browser pops) |
+| `make client` | `web/dist` | React build only, no Go |
+| `make desktop` | `desktop/build/bin/StateTrak.app` | Wails app — native window; needs the wails CLI + platform webview SDK, build on the target OS |
+| `make dmg` | `release/StateTrak.dmg` | `make desktop` + macOS disk image |
+| `make release` | `release/` binaries | pure Go cross-compile (mac arm/intel, linux, windows), browser mode — no cgo needed |
+| `make clean` | — | removes binary, `web/dist`, `release/`, `desktop/build/bin` |
+
+Platform notes:
+
+- **macOS desktop build** needs Xcode Command Line Tools (cgo/WKWebView).
+- **Windows/Linux desktop builds** run natively on the target OS: WebView2
+  (preinstalled on Win 10/11) resp. `libwebkit2gtk` dev packages on Linux;
+  then `cd desktop && wails build`.
+- A plain `go build .` works everywhere without cgo and serves the UI once
+  `make client` has run (a tracked `web/dist/.gitkeep` keeps `go:embed`
+  valid on a fresh clone).
+
+### macOS packaging (`make dmg`)
+
+`make dmg` builds the Wails app and wraps `StateTrak.app` into
+`release/StateTrak.dmg` with macOS' own `hdiutil` (compressed UDZO image,
+volume name “StateTrak”) — recipients mount it and drag the app to
+/Applications. The target only exists on macOS (`hdiutil` is macOS-only).
+
+Signing notes:
+
+- `wails build` **ad-hoc self-signs** the app (it runs locally without
+  prompts). An ad-hoc signature carries no identity, so Gatekeeper will
+  still quarantine the dmg when downloaded from the internet — recipients
+  right-click the app → *Open* once, or run
+  `xattr -dr com.apple.quarantine StateTrak.app` after copying.
+- For real distribution, sign with a Developer ID and notarize the dmg
+  (requires an Apple Developer account; notarytool needs a stored app
+  profile — see `xcrun notarytool store-credentials`):
+
+      make desktop
+      codesign --deep --force --options runtime \
+        --sign "Developer ID Application: Your Name (TEAMID123)" \
+        desktop/build/bin/StateTrak.app
+      hdiutil create -volname StateTrak \
+        -srcfolder desktop/build/bin/StateTrak.app \
+        -ov -format UDZO release/StateTrak.dmg
+      xcrun notarytool submit release/StateTrak.dmg \
+        --keychain-profile notary-profile --wait
+      xcrun stapler staple release/StateTrak.dmg
+
+  Then the dmg opens cleanly on any Mac. Until then, `make dmg` output is
+  perfect for yourself and people who trust where it came from.
+
 ## Desktop app (Wails) vs browser
 
 `make desktop` packages the whole thing as a real desktop app
@@ -22,19 +90,13 @@ same gin API + embedded React UI in-process through Wails' asset server —
 the client keeps using plain `fetch()`, with every non-asset request falling
 through to the gin router. Data goes to `~/Library/Application Support/StateTrak`
 (`-data` overrides) since a Finder-launched app has no usable working dir.
-
-Needs the wails CLI once:
-
-    go install github.com/wailsapp/wails/v2/cmd/wails@v2.16.0
-
-Windows/Linux builds need the platform webview SDKs and are built natively
-(`cd desktop && wails build`); the `release/` cross-compile targets stay
-pure Go and open the default browser instead. `STATETRAK_NO_OPEN=1`
-suppresses the browser (dev/server flows; set in `make run` and
+The window is fullscreenable via the native ⤢ button or **F11** (the same
+shortcut works in browser mode via the Fullscreen API). Toolchain
+requirements live in **Building** above. `STATETRAK_NO_OPEN=1`
+suppresses the browser in server mode (set in `make run` and
 `deploy/statetrak.service`).
 
-On start the default browser opens automatically (opt out with
-`STATETRAK_NO_OPEN=1`, e.g. on headless servers). Each user brings their own
+Each user brings their own
 keys via the in-app **🔑 settings panel** (stored in the browser, sent per
 request — never saved server-side):
 
@@ -45,16 +107,9 @@ request — never saved server-side):
 
 ## Usage
 
-Build & run (compiles the React client into the binary, listens on `:3007`):
+Build & run (prerequisites and all targets in **Building**; listens on `:3007`):
 
     make
-
-`make` runs `npm run build` in `client/` and copies the output into `web/dist/`,
-which gets embedded into the Go binary via `go:embed`. The client build is
-**not** committed, so on a fresh clone you must build the client first —
-a plain `go build` works (a `web/dist/.gitkeep` keeps the embed valid) but the
-server will serve no UI until you run `make` (requires `npm install` in
-`client/` on a fresh clone).
 
 Parse a demo offline without starting the server (writes JSON to
 `controllers/data/output/local`):

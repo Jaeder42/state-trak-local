@@ -3,7 +3,9 @@ import { getSetting, setSetting } from "../utils/settings";
 
 // 🔑 bring-your-own keys: TypeSafe (JEV) + any OpenAI-compatible LLM.
 // Values live in this browser's localStorage and are sent per request.
-export const SettingsMenu = () => {
+// `label` renders a labeled pill button (empty state) instead of the round
+// launcher used in the controls bar.
+export const SettingsMenu = ({ label }) => {
   const [open, setOpen] = useState(false);
   const [values, setValues] = useState(() => ({
     jevKey: getSetting("jevKey"),
@@ -35,11 +37,11 @@ export const SettingsMenu = () => {
   return (
     <div className="filter-menu">
       <button
-        className="filter-toggle"
+        className={label ? "settings-toggle labeled" : "filter-toggle"}
         onClick={() => setOpen((o) => !o)}
         title="Keys & AI settings"
       >
-        🔑
+        {label ?? "🔑"}
       </button>
       {open && (
         <div className="filter-panel settings-panel">
