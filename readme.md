@@ -49,6 +49,16 @@ Platform notes:
   `make client` has run (a tracked `web/dist/.gitkeep` keeps `go:embed`
   valid on a fresh clone).
 
+### Agent build tool (`build_app`)
+
+`.pi/extensions/build-app.ts` is a pi extension registering a `build_app`
+tool for AI agents working in this repo: parameters are `os`
+(macos/windows/linux) and `target` (desktop/server/dmg). Server binaries
+cross-compile locally from any host; desktop builds run locally when `os`
+matches the host and otherwise dispatch the CI workflow with the matching
+`os` input (needs `gh` authenticated) and return the run URL. Prefer the
+tool over hand-rolling make/wails/gh command chains.
+
 ### CI / GitHub Actions
 
 `.github/workflows/build.yml` stays quiet on ordinary pushes (runner minutes
@@ -61,7 +71,8 @@ on a private repo) and runs on PRs:
 The **desktop matrix** (macOS universal dmg, Windows zip, Linux tar.gz) and
 the **release** job (attaching everything to a GitHub release) only run on
 version tags or manual dispatch — macOS runner minutes bill at 10× on
-private repos:
+private repos. Manual dispatch can also build a **single OS** (`os` input:
+all/macos/windows/linux):
 
     git tag v0.1.0 && git push origin v0.1.0
 

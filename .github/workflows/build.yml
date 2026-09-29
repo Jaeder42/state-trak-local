@@ -29,6 +29,11 @@ on:
         description: Desktop app matrix (macOS dmg / windows / linux — macOS minutes bill 10x)
         type: boolean
         default: true
+      os:
+        description: Which OS to build the desktop app for
+        type: choice
+        options: [all, macos, windows, linux]
+        default: all
 
 env:
   WAILS_VERSION: v2.16.0
@@ -95,16 +100,21 @@ jobs:
   desktop:
     # Wails app per OS. Gated: macOS minutes are expensive, so this only
     # runs on version tags and (optionally) manual dispatches.
-    if: startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && inputs.desktop == true)
+    # Tags always build everything (inputs.os is null there); manual runs can
+    # build a single OS via the `os` input.
+    if: (inputs.os == null || inputs.os == 'all' || inputs.os == matrix.os-name) && (startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && inputs.desktop == true))
     strategy:
       fail-fast: false
       matrix:
         include:
           - os: macos-14
+            os-name: macos
             build-args: "-platform darwin/universal"
           - os: windows-latest
+            os-name: windows
             build-args: ""
           - os: ubuntu-24.04
+            os-name: linux
             build-args: "-tags webkit2_41" # 24.04 dropped webkit2gtk-4.0
     runs-on: ${{ matrix.os }}
     steps:

@@ -31,6 +31,12 @@ go run . -jev=local        # JEV economy analysis of a parsed demo (TYPESAFE_API
 ./statetrak -addr=:3011 -data=/some/dir   # standalone run: custom port/data dir, opens the browser
 ```
 
+Agents running inside pi get the `build_app` tool
+(`.pi/extensions/build-app.ts`): build for a given OS with
+`build_app(os=<macos|windows|linux>, target=<desktop|server|dmg>)` —
+local build when the OS matches the host, CI dispatch
+(`gh workflow run build -f os=…`) otherwise.
+
 A plain `go build .` works on a fresh clone (a tracked `web/dist/.gitkeep`
 keeps `go:embed` valid) but serves no UI until `make client` has run —
 it builds the plain server (browser mode). The server listens on **:3007**
