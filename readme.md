@@ -64,6 +64,13 @@ private repos, so they stay off the per-push path:
 
     git tag v0.1.0 && git push origin v0.1.0
 
+**Manual runs are independently selectable**: Actions tab → *build* → *Run
+workflow* → pick a branch (or a tag to also re-run its release) and check
+**server** and/or **desktop** — e.g. desktop-only to test a Wails build
+before tagging, or server-only to avoid the macOS-minute cost. Lint always
+runs (it's seconds). Failed jobs can also be re-run individually from the
+run page.
+
 No secrets are involved: keys are bring-your-own at runtime, and the macOS
 app is ad-hoc self-signed (see the notarization notes above if you ever
 want a Gatekeeper-clean dmg).
