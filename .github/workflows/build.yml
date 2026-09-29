@@ -1,6 +1,7 @@
-# Build flow: lint + server binaries on every push/PR; the Wails desktop
-# matrix only on version tags and manual runs (macOS runner minutes bill at
-# 10x on private repos — keep them off the per-push path).
+# Build flow: nothing happens on ordinary pushes (private-repo runner
+# minutes); PRs run lint + server; version tags and manual dispatches build
+# everything, with the Wails desktop matrix + release job gated to tags
+# (macOS runner minutes bill at 10x on private repos).
 #
 # No secrets needed: the app is bring-your-own-keys (JEV/LLM), and the macOS
 # app is ad-hoc self-signed by wails (recipients right-click -> Open on first
@@ -14,8 +15,7 @@ name: build
 
 on:
   push:
-    branches: [main]
-    tags: ["v*"]
+    tags: ["v*"] # no ordinary branch pushes — CI costs minutes on a private repo
   pull_request:
   workflow_dispatch:
     # manual runs are independently selectable: uncheck what you don't

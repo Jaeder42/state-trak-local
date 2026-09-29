@@ -51,7 +51,8 @@ Platform notes:
 
 ### CI / GitHub Actions
 
-`.github/workflows/build.yml` runs on every push/PR:
+`.github/workflows/build.yml` stays quiet on ordinary pushes (runner minutes
+on a private repo) and runs on PRs:
 
 - **lint** — `gofmt -l .` must be empty, `go vet ./...`
 - **server** — client build + `make release` cross-binaries + a boot/`/ping`
@@ -60,7 +61,7 @@ Platform notes:
 The **desktop matrix** (macOS universal dmg, Windows zip, Linux tar.gz) and
 the **release** job (attaching everything to a GitHub release) only run on
 version tags or manual dispatch — macOS runner minutes bill at 10× on
-private repos, so they stay off the per-push path:
+private repos:
 
     git tag v0.1.0 && git push origin v0.1.0
 
