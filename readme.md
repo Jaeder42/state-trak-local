@@ -49,6 +49,25 @@ Platform notes:
   `make client` has run (a tracked `web/dist/.gitkeep` keeps `go:embed`
   valid on a fresh clone).
 
+### CI / GitHub Actions
+
+`.github/workflows/build.yml` runs on every push/PR:
+
+- **lint** — `gofmt -l .` must be empty, `go vet ./...`
+- **server** — client build + `make release` cross-binaries + a boot/`/ping`
+  smoke test, artifacts uploaded
+
+The **desktop matrix** (macOS universal dmg, Windows zip, Linux tar.gz) and
+the **release** job (attaching everything to a GitHub release) only run on
+version tags or manual dispatch — macOS runner minutes bill at 10× on
+private repos, so they stay off the per-push path:
+
+    git tag v0.1.0 && git push origin v0.1.0
+
+No secrets are involved: keys are bring-your-own at runtime, and the macOS
+app is ad-hoc self-signed (see the notarization notes above if you ever
+want a Gatekeeper-clean dmg).
+
 ### macOS packaging (`make dmg`)
 
 `make dmg` builds the Wails app and wraps `StateTrak.app` into
@@ -261,3 +280,64 @@ client/              React viewer (Create React App)
   src/maps/          radar images + per-map config
 controllers/data/    uploads + parse output (gitignored)
 ```
+## Release notes
+
+Convention: every tagged release gets a short section here (and the GitHub
+release body can lift it). Sections append newest-first.
+
+### v0.1.0 — first tagged release
+
+The complete app as it stands: demo parsing, radar playback, team-oriented
+review, three analysis layers, standalone distribution with bring-your-own
+keys, and a native desktop build.
+
+**Playback**
+- CS2 demo parsing (demoinfocs) → per-round JSON: player positions/yaw/health,
+  scoreboard, kills, smokes/flashes/HEs/fires, and full bomb tracking —
+  carried (carrier ring + C4 badge), dropped (blinking) and planted (pulsing)
+- 2D radar replay: 0.25–4× speeds, pan/zoom/pinch, click-to-focus follow cam,
+  movement trails, kill feed + kill markers, health bars, round bar with
+  per-team buy chips and a bomb-timer pill
+
+**Your team**
+- The viewer orients around your team from your Steam ID (⚙ panel): your
+  team listed first ("YOUR TEAM"/"ENEMY"), your row highlighted, a white halo
+  on your dot, kill feed/timeline/radar colored from your perspective
+  (green = enemy down, red = teammate down), and round buttons colored
+  win/loss — correct through halftime side swaps via per-round rosters
+
+**Analysis**
+- Per-round economy snapshots with heuristic buy classification
+  (pistol/eco/force/hero/kept/half/full)
+- **JEV analysis** — TypeSafe System One judging every team's buy against the
+  baseline, cached per demo, bring-your-own key (🔑)
+- **Post-plant positioning** — T setups 5s after the plant (spread, distance
+  to the bomb, hold-vs-push movement), CT retake entries (timing, grouping),
+  outcomes (defused/exploded/eliminated), phantom plants excluded, per-round
+  radar maps, aggregate radars colored by outcome, watch-from-plant jumps,
+  and a deterministic good/bad team-pattern narrative for any chosen player
+- **AI coach** — a written review of your team's demo from your own
+  OpenAI-compatible LLM (OpenAI, gateways, local Ollama), server-assembled
+  context, keys per-request only
+
+**Standalone + desktop**
+- One self-contained binary; browser auto-opens; `-addr`/`-data` flags;
+  every user brings their own JEV/LLM keys (stored in the browser, never
+  server-side)
+- **Wails desktop app** (`make desktop`/`make dmg`): native window with the
+  same UI and API in-process, green-button fullscreen, per-user data dir,
+  drag-to-Applications dmg
+- `make release` cross-compiles pure-Go browser-mode binaries; GitHub
+  Actions builds everything on tags (see Building)
+
+**Known limitations**
+- No user accounts — a server deployment's only access control is proxy
+  basic auth; anyone let in shares full demo access
+- `FrameRate` is hardcoded to 60; the frame "LIVE" phase heuristic never
+  fires in the second half of CS2 demos (none of the analysis relies on it)
+- Demos parsed before the economy/roster fields shipped fall back to neutral
+  coloring and lack per-round buys — re-upload to refresh them
+- No automated test suite — CI covers gofmt/vet, builds, and a boot smoke
+  test; real parsing is verified manually against `test.dem` locally
+- The macOS dmg is ad-hoc signed (right-click → Open on first launch);
+  notarization is documented but requires an Apple Developer account
