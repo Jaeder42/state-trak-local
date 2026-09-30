@@ -1,15 +1,18 @@
 # Build flow: nothing happens on ordinary pushes (private-repo runner
-# minutes); PRs run lint + server; version tags and manual dispatches build
-# everything, with the Wails desktop matrix + release job gated to tags
-# (macOS runner minutes bill at 10x on private repos).
+# minutes); PRs run lint + server; version tags additionally publish the
+# server binaries to the release.
+#
+# The desktop apps live in their own per-OS release flows (see
+# release-macos.yml / release-windows.yml / release-linux.yml): every tag
+# publishes all platforms, and each OS can also be built — and published —
+# standalone via manual dispatch.
 #
 # No secrets needed: the app is bring-your-own-keys (JEV/LLM), and the macOS
 # app is ad-hoc self-signed by wails (recipients right-click -> Open on first
 # launch; real notarization would need Apple Developer secrets added later).
 #
-# Triggering a release build:
-#   git tag v0.1.0 && git push origin v0.1.0
-# -> artifacts attach to a GitHub release automatically.
+# Triggering a full release: git tag v0.1.0 && git push origin v0.1.0
+# (all four workflows fire; each publishes its own artifacts idempotently)
 
 name: build
 
@@ -18,29 +21,19 @@ on:
     tags: ["v*"] # no ordinary branch pushes — CI costs minutes on a private repo
   pull_request:
   workflow_dispatch:
-    # manual runs are independently selectable: uncheck what you don't
-    # want (e.g. desktop-only, or server-only without burning macOS minutes)
+    # manual runs are independently selectable — uncheck what you don't want
     inputs:
       server:
         description: Server binaries (cross-compile + smoke test)
         type: boolean
         default: true
-      desktop:
-        description: Desktop app matrix (macOS dmg / windows / linux — macOS minutes bill 10x)
-        type: boolean
-        default: true
-      os:
-        description: Which OS to build the desktop app for
-        type: choice
-        options: [all, macos, windows, linux]
-        default: all
 
 env:
   WAILS_VERSION: v2.16.0
 
 defaults:
   run:
-    shell: bash # works on all three runner OSes (git-bash on Windows)
+    shell: bash
 
 jobs:
   lint:
@@ -67,6 +60,8 @@ jobs:
     # alone (failed/skipped `needs` would cascade-skip it).
     if: github.event_name != 'workflow_dispatch' || inputs.server == true
     runs-on: ubuntu-latest
+    permissions:
+      contents: write # release upload on tag pushes
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
@@ -96,85 +91,15 @@ jobs:
           name: server-binaries
           path: release/*
           if-no-files-found: error
-
-  desktop:
-    # Wails app per OS. Gated: macOS minutes are expensive, so this only
-    # runs on version tags and (optionally) manual dispatches.
-    # Tags always build everything (inputs.os is null there); manual runs can
-    # build a single OS via the `os` input.
-    if: (inputs.os == null || inputs.os == 'all' || inputs.os == matrix.os-name) && (startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && inputs.desktop == true))
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - os: macos-14
-            os-name: macos
-            build-args: "-platform darwin/universal"
-          - os: windows-latest
-            os-name: windows
-            build-args: ""
-          - os: ubuntu-24.04
-            os-name: linux
-            build-args: "-tags webkit2_41" # 24.04 dropped webkit2gtk-4.0
-    runs-on: ${{ matrix.os }}
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
-        with:
-          go-version-file: go.mod
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 20
-          cache: npm
-          cache-dependency-path: client/package-lock.json
-      - name: linux webview deps
-        if: runner.os == 'Linux'
-        run: sudo apt-get update && sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.1-dev
-      - name: install wails CLI (${{ env.WAILS_VERSION }})
+      - name: publish server binaries to the release (tag pushes)
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
-          echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
-          go install github.com/wailsapp/wails/v2/cmd/wails@${{ env.WAILS_VERSION }}
-      - name: build client
-        run: |
-          cd client && npm ci && npm run build && cd ..
-          rm -rf web/dist && cp -r client/build web/dist && touch web/dist/.gitkeep
-      - name: wails build
-        run: cd desktop && wails build ${{ matrix.build-args }}
-      - name: package (macos dmg)
-        if: runner.os == 'macOS'
-        run: |
-          cd desktop/build/bin
-          hdiutil create -volname StateTrak -srcfolder StateTrak.app -ov -format UDZO StateTrak-macos.dmg
-      - name: package (windows zip)
-        if: runner.os == 'Windows'
-        shell: pwsh
-        run: Compress-Archive -Path desktop/build/bin/StateTrak.exe -DestinationPath StateTrak-windows-amd64.zip
-      - name: package (linux tar.gz)
-        if: runner.os == 'Linux'
-        run: tar -czf StateTrak-linux-amd64.tar.gz -C desktop/build/bin StateTrak
-      - uses: actions/upload-artifact@v4
-        with:
-          name: desktop-${{ runner.os }}
-          path: |
-            desktop/build/bin/StateTrak-macos.dmg
-            StateTrak-windows-amd64.zip
-            StateTrak-linux-amd64.tar.gz
-          if-no-files-found: error
-
-  release:
-    # tag push: attach everything to a GitHub release
-    if: startsWith(github.ref, 'refs/tags/v')
-    needs: [server, desktop]
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-    steps:
-      - uses: actions/download-artifact@v4
-        with:
-          path: dist
-          merge-multiple: true
-      - name: artifacts
-        run: ls -la dist/
-      - uses: softprops/action-gh-release@v2
-        with:
-          files: dist/*
+          TAG="${GITHUB_REF_NAME}"
+          gh release view "$TAG" >/dev/null 2>&1 \
+            || gh release create "$TAG" --generate-notes \
+            || gh release view "$TAG" >/dev/null 2>&1 \
+            || { echo "failed to create or find release $TAG"; exit 1; }
+          gh release upload "$TAG" release/* --clobber
+          echo "published server binaries to release $TAG"

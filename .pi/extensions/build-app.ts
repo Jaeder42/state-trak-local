@@ -11,9 +11,10 @@
  *                     (`make desktop` / `make dmg`; the client build is a
  *                     make dependency)
  *   - target=desktop + a DIFFERENT os : Wails needs each OS's webview SDK,
- *                     so it can't be built locally — dispatch the GitHub
- *                     Actions workflow (needs `gh` authenticated) with the
- *                     matching `os` input and return the run URL
+ *                     so it can't be built locally — dispatch that OS's
+ *                     release workflow (release-<os>.yml, needs `gh`
+ *                     authenticated) and return the run URL; publish=true
+ *                     attaches the artifact to the dispatched tag's release
  */
 
 import { spawn } from "node:child_process";
@@ -62,9 +63,10 @@ const buildApp = defineTool({
 	description:
 		"Build the StateTrak app for a given operating system. " +
 		"target=desktop builds the Wails desktop app — locally when os matches " +
-		`the current host (${HOST_OS}), otherwise it dispatches the GitHub Actions workflow (needs gh authenticated) and returns the run URL. ` +
+		`the current host (${HOST_OS}), otherwise it dispatches that OS's release workflow (release-<os>.yml, needs gh authenticated) and returns the run URL. ` +
 		"target=dmg builds the macOS disk image (os must be macos). " +
-		"target=server cross-compiles the pure-Go server binaries locally for all platforms regardless of os.",
+		"target=server cross-compiles the pure-Go server binaries locally for all platforms regardless of os. " +
+		"publish=true (CI dispatches only) attaches the artifact to the GitHub release — requires dispatching a tag ref.",
 	parameters: Type.Object({
 		os: Type.Union([Type.Literal("macos"), Type.Literal("windows"), Type.Literal("linux")], {
 			description: "Target operating system",
@@ -72,6 +74,11 @@ const buildApp = defineTool({
 		target: Type.Union(
 			[Type.Literal("desktop"), Type.Literal("server"), Type.Literal("dmg")],
 			{ description: "What to build: the Wails desktop app, its macOS dmg, or the server binaries" },
+		),
+		publish: Type.Optional(
+			Type.Boolean({
+				description: "CI dispatch only: also publish the artifact to the dispatched tag's GitHub release (the ref must be a tag)",
+			}),
 		),
 	}),
 
@@ -129,8 +136,9 @@ const buildApp = defineTool({
 					: `Built desktop/build/bin/StateTrak${process.platform === "win32" ? ".exe" : ""} on the ${HOST_OS} host.`;
 		}
 
-		// ---- desktop for another OS: dispatch the CI workflow ----
+		// ---- desktop for another OS: dispatch that OS's release workflow ----
 		else {
+			const publish = params.publish === true;
 			const branch = await run("git", ["rev-parse", "--abbrev-ref", "HEAD"], { signal });
 			if (branch.code !== 0) throw new Error("could not determine the git branch: " + branch.output);
 			const ref = branch.output.trim();
@@ -141,26 +149,27 @@ const buildApp = defineTool({
 					`gh is not authenticated — run "gh auth login" first (the ${os} desktop app can only be built on ${os} or via GitHub Actions)`,
 				);
 			}
-			onUpdate?.(`dispatching the GitHub Actions workflow for a ${os} desktop build…`);
+			onUpdate?.(`dispatching the ${os} release workflow…`);
 			const dispatch = await run("gh", [
-				"workflow", "run", "build",
+				"workflow", "run", `release-${os}.yml`,
 				"--ref", ref,
-				"-f", "desktop=true",
-				"-f", "server=false",
-				"-f", `os=${os}`,
+				"-f", `publish=${publish}`,
 			], { signal });
 			if (dispatch.code !== 0) throw new Error(tail(dispatch.output));
 
 			const latest = await run("gh", [
-				"run", "list", "--workflow=build.yml", "--limit", "1",
+				"run", "list", `--workflow=release-${os}.yml`, "--limit", "1",
 				"--json", "url,status", "--jq", ".[0] | \"\\(.status) \\(.url)\"",
 			], { signal });
-			steps.push(`gh workflow run build (os=${os})`);
+			steps.push(`gh workflow run release-${os}.yml (publish=${publish})`);
 			result =
 				`Dispatched the ${os} desktop build on GitHub (ref ${ref}). ` +
 				`Wails apps need each OS's webview SDK, so cross-desktop builds run in CI.\n` +
 				(latest.code === 0 ? `Run: ${latest.output.trim()}\n` : "") +
-				`Takes ~5-10 min; artifacts land on the run page (dmg for macos, zip for windows, tar.gz for linux).`;
+				(publish
+					? "publish=true — the artifact will attach to this ref's release. NOTE: publishing requires the ref to be a version tag; a branch ref builds only."
+					: "Build-only run; add publish=true to attach the artifact to a tag's release.") +
+				`\nTakes ~5-10 min; the artifact also lands on the run page (dmg for macos, zip for windows, tar.gz for linux).`;
 		}
 
 		return {

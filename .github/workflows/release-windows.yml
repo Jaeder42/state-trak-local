@@ -1,0 +1,73 @@
+# Windows release flow — builds the Wails desktop app zip and publishes it.
+#
+#   - tag push (v*): build + publish to the release for that tag
+#   - manual dispatch: standalone build; pick a tag as the ref and set
+#     publish=true to (re-)publish the zip to that tag's release
+
+name: release (windows)
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: Publish the zip to the GitHub release for this ref (pick a tag as the ref)
+        type: boolean
+        default: false
+
+env:
+  WAILS_VERSION: v2.16.0
+
+defaults:
+  run:
+    shell: bash # git-bash on Windows runners
+
+permissions:
+  contents: read
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    permissions:
+      contents: write # release upload
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: client/package-lock.json
+      - name: install wails CLI (${{ env.WAILS_VERSION }})
+        run: |
+          echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
+          go install github.com/wailsapp/wails/v2/cmd/wails@${{ env.WAILS_VERSION }}
+      - name: build client
+        run: |
+          cd client && npm ci && npm run build && cd ..
+          rm -rf web/dist && cp -r client/build web/dist && touch web/dist/.gitkeep
+      - name: wails build
+        run: cd desktop && wails build
+      - name: package (zip)
+        shell: pwsh
+        run: Compress-Archive -Path desktop/build/bin/StateTrak.exe -DestinationPath StateTrak-windows-amd64.zip
+      - uses: actions/upload-artifact@v4
+        with:
+          name: desktop-windows
+          path: StateTrak-windows-amd64.zip
+          if-no-files-found: error
+      - name: publish to release
+        if: startsWith(github.ref, 'refs/tags/v') && (github.event_name == 'push' || inputs.publish == true)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG="${GITHUB_REF_NAME}"
+          gh release view "$TAG" >/dev/null 2>&1 \
+            || gh release create "$TAG" --generate-notes \
+            || gh release view "$TAG" >/dev/null 2>&1 \
+            || { echo "failed to create or find release $TAG"; exit 1; }
+          gh release upload "$TAG" StateTrak-windows-amd64.zip --clobber
+          echo "published StateTrak-windows-amd64.zip to release $TAG"

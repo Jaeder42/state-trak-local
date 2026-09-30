@@ -53,11 +53,13 @@ Platform notes:
 
 `.pi/extensions/build-app.ts` is a pi extension registering a `build_app`
 tool for AI agents working in this repo: parameters are `os`
-(macos/windows/linux) and `target` (desktop/server/dmg). Server binaries
-cross-compile locally from any host; desktop builds run locally when `os`
-matches the host and otherwise dispatch the CI workflow with the matching
-`os` input (needs `gh` authenticated) and return the run URL. Prefer the
-tool over hand-rolling make/wails/gh command chains.
+(macos/windows/linux), `target` (desktop/server/dmg) and an optional
+`publish` (CI dispatches). Server binaries cross-compile locally from any
+host; desktop builds run locally when `os` matches the host and otherwise
+dispatch that OS's release workflow, `release-<os>.yml` (needs `gh`
+authenticated), and return the run URL — with `publish=true` the artifact
+attaches to the dispatched tag's release. Prefer the tool over hand-rolling
+make/wails/gh command chains.
 
 ### CI / GitHub Actions
 
@@ -66,22 +68,26 @@ on a private repo) and runs on PRs:
 
 - **lint** — `gofmt -l .` must be empty, `go vet ./...`
 - **server** — client build + `make release` cross-binaries + a boot/`/ping`
-  smoke test, artifacts uploaded
+  smoke test, artifacts uploaded; on version tags the binaries are also
+  published to the release
 
-The **desktop matrix** (macOS universal dmg, Windows zip, Linux tar.gz) and
-the **release** job (attaching everything to a GitHub release) only run on
-version tags or manual dispatch — macOS runner minutes bill at 10× on
-private repos. Manual dispatch can also build a **single OS** (`os` input:
-all/macos/windows/linux):
+Each desktop platform is **its own release flow** — `release-macos.yml`,
+`release-windows.yml`, `release-linux.yml` — triggered on `v*` tags and by
+manual dispatch:
 
-    git tag v0.1.0 && git push origin v0.1.0
-
-**Manual runs are independently selectable**: Actions tab → *build* → *Run
-workflow* → pick a branch (or a tag to also re-run its release) and check
-**server** and/or **desktop** — e.g. desktop-only to test a Wails build
-before tagging, or server-only to avoid the macOS-minute cost. Lint always
-runs (it's seconds). Failed jobs can also be re-run individually from the
-run page.
+- **Tag push** (`git tag v0.1.0 && git push origin v0.1.0`): all four
+  workflows fire; each publishes its artifact (dmg / zip / tar.gz / server
+  binaries) to the release. Publishing is idempotent — whichever flow wins
+  creates the release, uploads `--clobber` so re-runs replace assets
+- **Standalone run**: Actions tab → e.g. *release (windows)* → *Run
+  workflow* → pick a **tag** as the ref and check **publish** → a fresh
+  windows zip builds and attaches to that tag's release alone. Dispatching
+  with publish unchecked (or from a branch) is a build-only run — macOS
+  runner minutes bill at 10× on private repos, so standalone runs put you in
+  control of which platform spends them
+- The `build_app` agent tool (below) dispatches these same per-OS flows —
+  `build_app(os="windows", target="desktop", publish=true)` — when the
+  dispatched ref is a tag
 
 No secrets are involved: keys are bring-your-own at runtime, and the macOS
 app is ad-hoc self-signed (see the notarization notes above if you ever

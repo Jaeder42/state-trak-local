@@ -33,9 +33,10 @@ go run . -jev=local        # JEV economy analysis of a parsed demo (TYPESAFE_API
 
 Agents running inside pi get the `build_app` tool
 (`.pi/extensions/build-app.ts`): build for a given OS with
-`build_app(os=<macos|windows|linux>, target=<desktop|server|dmg>)` —
-local build when the OS matches the host, CI dispatch
-(`gh workflow run build -f os=…`) otherwise.
+`build_app(os=<macos|windows|linux>, target=<desktop|server|dmg>, publish=<bool>)` —
+local build when the OS matches the host; a per-OS CI dispatch
+(`gh workflow run release-<os>.yml`) otherwise, where publish=true attaches
+the artifact to the dispatched tag's release.
 
 A plain `go build .` works on a fresh clone (a tracked `web/dist/.gitkeep`
 keeps `go:embed` valid) but serves no UI until `make client` has run —
