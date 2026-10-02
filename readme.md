@@ -322,4 +322,6 @@ keys, and a native desktop build.
 
 ## License
 
-MIT — see [LICENSE](LICENSE).
+MIT — see [LICENSE](LICENSE). Third-party notices for the bundled Go/npm
+dependencies: [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) (also served
+by the app at `/THIRD_PARTY_NOTICES.md`).

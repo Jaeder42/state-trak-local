@@ -12,6 +12,7 @@ client:
 	cd client && npm run build
 	rm -rf web/dist
 	cp -r client/build web/dist
+	cp THIRD_PARTY_NOTICES.md web/dist/
 	touch web/dist/.gitkeep
 
 # Wails desktop app -> desktop/build/bin/StateTrak.app (needs the wails CLI:
