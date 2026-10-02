@@ -31,11 +31,11 @@ Parsing is done with
   eliminated), per-round and aggregate radar maps, watch-from-plant jumps,
   and a deterministic good/bad-pattern writeup for any chosen player's team
 - **AI coach** — a written review of your demo from *your own*
-  OpenAI-compatible LLM (OpenAI, a gateway, or a local Ollama); the server
+  OpenAI-compatible LLM (OpenAI, a gateway, or a local Ollama); the app
   assembles the context, your key never leaves the request
 - **Bring your own keys** — the TypeSafe (JEV) key and the LLM config live in
   your browser (🔑 settings), are sent per request, and are never stored
-  server-side
+  by the app
 - **Standalone** — one self-contained binary (UI embedded via `go:embed`),
   or a native desktop window via Wails
 
@@ -93,25 +93,13 @@ Platform notes:
   `make client` has run (a tracked `web/dist/.gitkeep` keeps `go:embed`
   valid on a fresh clone).
 
-### Agent build tool (`build_app`)
-
-`.pi/extensions/build-app.ts` is a pi extension registering a `build_app`
-tool for AI agents working in this repo: parameters are `os`
-(macos/windows/linux), `target` (desktop/server/dmg) and an optional
-`publish` (CI dispatches). Server binaries cross-compile locally from any
-host; desktop builds run locally when `os` matches the host and otherwise
-dispatch that OS's release workflow, `release-<os>.yml` (needs `gh`
-authenticated), and return the run URL — with `publish=true` the artifact
-attaches to the dispatched tag's release. Prefer the tool over hand-rolling
-make/wails/gh command chains.
-
 ### CI / GitHub Actions
 
 `.github/workflows/build.yml` stays quiet on ordinary pushes (CI runs
 where it matters) and runs on PRs:
 
 - **lint** — `gofmt -l .` must be empty, `go vet ./...`
-- **server** — client build + `make release` cross-binaries + a boot/`/ping`
+- **portable** — client build + `make release` cross-binaries + a boot/`/ping`
   smoke test, artifacts uploaded; on version tags the binaries are also
   published to the release
 
@@ -120,7 +108,7 @@ Each desktop platform is **its own release flow** — `release-macos.yml`,
 manual dispatch:
 
 - **Tag push** (`git tag v0.1.0 && git push origin v0.1.0`): all four
-  workflows fire; each publishes its artifact (dmg / zip / tar.gz / server
+  workflows fire; each publishes its artifact (dmg / zip / tar.gz / portable
   binaries) to the release. Publishing is idempotent — whichever flow wins
   creates the release, uploads `--clobber` so re-runs replace assets
 - **Standalone run**: Actions tab → e.g. *release (windows)* → *Run
@@ -188,7 +176,7 @@ Build & run (prerequisites and all targets in **Building**; listens on `:3007`):
 
     make
 
-Parse a demo offline without starting the server (writes JSON to
+Parse a demo offline without starting the app (writes JSON to
 `controllers/data/output/local`):
 
     go run . -parse=path/to/demo.dem
@@ -221,7 +209,7 @@ The key can also live in a `.env` file in the repo root (`TYPESAFE_API_KEY=...`)
 | `GET /demos/:id/output` | game metadata (map, players, frame rate) |
 | `GET /demos/:id/rounds` | round list with winners, per-team buy types and per-team rosters (steam ids, from the round's economy snapshot) |
 | `GET /demos/:id/analysis` | JEV buy-type analysis per round (cached after the first call; key bring-your-own via `X-TypeSafe-Key` header, app env as fallback) |
-| `POST /demos/:id/coach` | AI coach review for one player's team — server assembles demo context (rounds, buys, post-plant) and calls the OpenAI-compatible LLM from the request body; key never persisted |
+| `POST /demos/:id/coach` | AI coach review for one player's team — the app assembles demo context (rounds, buys, post-plant) and calls the OpenAI-compatible LLM from the request body; key never persisted |
 | `GET /demos/:id/postplant` | post-plant positioning per planted round — T setups (spread, distance to bomb, movement), CT retake entries (timing, grouping), and how each correlates with the outcome (cached after the first call). The panel also writes out good/bad pattern bullets for a chosen player's team (`client/src/utils/postplantText.js`) |
 | `GET /demos/:id/:round` | full per-frame data for one round |
 | `GET /ping` | health check |
@@ -289,7 +277,7 @@ and compares its judgment against the baseline.
 - **Demo names/statuses are persisted in `controllers/data/output/<id>/meta.json`**
   (written at upload time) and reloaded by `loadPersistedDemos()` on startup.
   The in-memory `demoStatus` map would otherwise be lost on restart. Demos
-  whose `output.json` is missing (e.g. server killed mid-parse) show up as
+  whose `output.json` is missing (e.g. app killed mid-parse) show up as
   `error` after a restart.
 - **Upload/parse status lives only in memory during a run** — there is no
   cross-process coordination. `-parse` runs are not tracked in the status map.
@@ -305,7 +293,7 @@ and compares its judgment against the baseline.
 ## Project layout
 
 ```
-main.go              server entry: flags (-parse/-jev/-addr/-data), browser auto-open
+main.go              portable binary entry: flags (-parse/-jev/-addr/-data), browser auto-open
 server/router.go     the gin router (API routes + SPA fallback) — shared with the desktop app
 web/web.go           embeds client build (web/dist): Dist() fs + SPA handler
 desktop/             Wails desktop app (main.go, wails.json, build/ scaffold)
@@ -319,9 +307,18 @@ client/              React viewer (Create React App)
 controllers/data/    uploads + parse output (gitignored)
 ```
 
-## License
+## Agent tooling (`build_app`)
 
-MIT — see [LICENSE](LICENSE).
+For coding agents working in this repo with
+[pi](https://github.com/earendil-works/pi-coding-agent): `.pi/extensions/build-app.ts`
+registers a `build_app` tool with parameters `os` (macos/windows/linux),
+`target` (desktop/portable/dmg) and an optional `publish` (CI dispatches).
+Portable binaries cross-compile locally from any host; desktop builds run
+locally when `os` matches the host and otherwise dispatch that OS's release
+workflow, `release-<os>.yml` (needs `gh` authenticated), and return the run
+URL — with `publish=true` the artifact attaches to the dispatched tag's
+release. Agents should prefer the tool over hand-rolling make/wails/gh
+command chains.
 
 ## Release notes
 
@@ -360,13 +357,12 @@ keys, and a native desktop build.
   radar maps, aggregate radars colored by outcome, watch-from-plant jumps,
   and a deterministic good/bad team-pattern narrative for any chosen player
 - **AI coach** — a written review of your team's demo from your own
-  OpenAI-compatible LLM (OpenAI, gateways, local Ollama), server-assembled
+  OpenAI-compatible LLM (OpenAI, gateways, local Ollama), app-assembled
   context, keys per-request only
 
 **Standalone + desktop**
 - One self-contained binary; browser auto-opens; `-addr`/`-data` flags;
-  every user brings their own JEV/LLM keys (stored in the browser, never
-  server-side)
+  every user brings their own JEV/LLM keys (stored in the browser, never stored by the app)
 - **Wails desktop app** (`make desktop`/`make dmg`): native window with the
   same UI and API in-process, green-button fullscreen, per-user data dir,
   drag-to-Applications dmg
@@ -382,3 +378,7 @@ keys, and a native desktop build.
   test; real parsing is verified manually against a local demo
 - The macOS dmg is ad-hoc signed (right-click → Open on first launch);
   notarization is documented but requires an Apple Developer account
+
+## License
+
+MIT — see [LICENSE](LICENSE).
