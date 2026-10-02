@@ -27,6 +27,7 @@ go vet ./...         # static analysis
 gofmt -l .           # must be empty before committing (tabs, gofmt style)
 
 go run . -parse=test.dem   # offline parse, writes controllers/data/output/local/
+go run . -reparse=<id>    # re-parse a stored upload with the current parser (refreshes stale output + clears derived caches)
 go run . -jev=local        # JEV economy analysis of a parsed demo (TYPESAFE_API_KEY from env or .env; dry run without it)
 ./statetrak -addr=:3011 -data=/some/dir   # standalone run: custom port/data dir, opens the browser
 ```
@@ -111,8 +112,9 @@ client        -> fetches /demos/:id/output (metadata), /demos/:id/:round
   plants are detected by the planted-run shape — RoundEnd resets
   `bombState`, so a real plant's `planted:true` run is always followed by
   `planted:false` frames, while a phantom run reaches the round's last
-  frame. Don't use the frame `phase` for this: the LIVE heuristic
-  (`GamePhase()==2`) never fires in the second half of CS2 demos.
+  frame. (The frame `phase` is event-driven now — freeze-end → LIVE,
+  round start/end → PAUSED — but it still can't tell a phantom from a real
+  plant, so the run-shape detection stays.)
 - `controllers/coach.go` — "AI coach" (`POST /demos/:id/coach`): the client
   sends its own OpenAI-compatible LLM config (base URL + model + key, from
   the 🔑 settings in localStorage — works with OpenAI, gateways, local
@@ -190,8 +192,11 @@ client        -> fetches /demos/:id/output (metadata), /demos/:id/:round
   start money snapshotted on `RoundStart`; spent = start money − bank.
   Pistol rounds are detected via start money ($800), not equipment values
   (which carry warmup leftovers in round 0).
-- `FrameRate` in `output.json` is hardcoded 60 (real value unavailable for
-  CS2, same header issue as above). Client playback speed depends on it.
+- `FrameRate` in `output.json` is measured from LIVE-phase frames (~67 for
+  CS2 — the header value is unavailable mid-parse). The client derives
+  playback timing per round from the frame timestamps, not from this
+  number. A fresh parse (upload or `-reparse`) clears `analysis.json` and
+  `postplant.json` so derived caches never go stale.
 - **The desktop app is a Wails build in `desktop/`** — same module, its own
   `main` package. It plugs the shared `server.NewRouter()` into Wails'
   asset server (`Assets: web.Dist()`, `Handler: router`): UI assets come

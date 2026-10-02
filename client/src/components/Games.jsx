@@ -15,7 +15,9 @@ import { getMySteamId, setMySteamId as persistMySteamId } from "../utils/me";
 import { toggleFullscreen } from "../utils/fullscreen";
 
 const API = "";
-const TICK_MS = 16; // ~60fps playback at 1x
+// Playback timing is derived from the loaded round's own frame timestamps
+// (CS2 demos are ~67 fps, not 60) — computed per round in Games below.
+const FALLBACK_FPS = 64;
 const BANNER = process.env.PUBLIC_URL + "/logo.png";
 const ICON = process.env.PUBLIC_URL + "/statetrak.png";
 
@@ -128,6 +130,16 @@ export const Games = () => {
     fetchRound(demoId, round);
   }, [round, demoId]);
 
+  // Effective playback rate of the loaded round, measured from its own frame
+  // timestamps — the server records one frame per demo tick (~67/s for
+  // CS2), so this drives real-time-accurate playback instead of assuming 60.
+  const tickMs = useMemo(() => {
+    const fs = output.frames;
+    if (!fs || fs.length < 2) return 1000 / FALLBACK_FPS;
+    const dt = fs[fs.length - 1].time - fs[0].time;
+    return dt > 0 ? (1000 * dt) / (fs.length - 1) : 1000 / FALLBACK_FPS;
+  }, [output.frames]);
+
   const tick = () => {
     setIndex((i) => {
       const max = (output.frames?.length ?? 1) - 1;
@@ -137,10 +149,10 @@ export const Games = () => {
 
   useEffect(() => {
     if (!playing) return undefined;
-    const inter = setInterval(tick, TICK_MS / speed);
+    const inter = setInterval(tick, tickMs / speed);
     return () => clearInterval(inter);
     // eslint-disable-next-line react-hooks/exhaustive-deps -- tick only closes over output, which is a dep
-  }, [playing, speed, output]);
+  }, [playing, speed, output, tickMs]);
 
   // Auto-advance to the next round (or stop after the last one).
   useEffect(() => {

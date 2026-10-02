@@ -79,6 +79,13 @@ func demoDir(id string) string {
 	return filepath.Join(outputDir, filepath.Base(id))
 }
 
+// UploadPath returns where a demo's original .dem is stored. The
+// `-reparse=<id>` flag re-runs the parser on it to refresh stale output
+// (e.g. demos parsed before a newer parser learned rosters/economy).
+func UploadPath(id string) string {
+	return filepath.Join(uploadDir, filepath.Base(id)+".dem")
+}
+
 // demoMeta is persisted next to the parse output so demo names survive restarts.
 type demoMeta struct {
 	Name string `json:"name"`

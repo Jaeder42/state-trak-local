@@ -181,11 +181,17 @@ Parse a demo offline without starting the app (writes JSON to
 
     go run . -parse=path/to/demo.dem
 
+Refresh a previously uploaded demo's output with the current parser
+(e.g. after new fields like rosters/economy were added — derived caches are
+invalidated automatically):
+
+    go run . -reparse=<demo id>
+
 **Your team.** The ⚙ panel stores your Steam ID in localStorage (empty
 until you set it — `client/src/utils/me.js` holds the logic). With no ID
 set the viewer stays neutral. Demos parsed before the roster field shipped
-lack per-round team info and fall back to neutral coloring — re-upload
-them to get it.
+lack per-round team info and fall back to neutral coloring — refresh them
+with `go run . -reparse=<demo id>`.
 
 **JEV economy analysis** (TypeSafe's "System One" decision model) —
 classifies each team's buy per round (pistol / eco / force / half / full)
@@ -251,44 +257,8 @@ is the deterministic baseline for the JEV round analysis (`-jev` flag,
 `controllers/jev.go`), which sends the economy state to TypeSafe's System One
 and compares its judgment against the baseline.
 
-## Gotchas & decisions worth remembering
-
-- **CS2 players can still plant the bomb after `RoundEnd`**, during the
-  round-over period. That "phantom" plant is a real event and leaves a few
-  planted frames at the end of the finished round — all transient state
-  (bomb, smokes, flashes, HEs) is therefore reset on **`RoundStart`**, not
-  just `RoundEnd`, so it can't leak into the next round's frames.
-- **CS2 demos don't expose a frame count until the end of the file** — the
-  demoinfocs `Progress()` call is based on header playback frames, which for
-  CS2 are only known once the `CDemoFileInfo` message at the very end is
-  reached. `Progress()` therefore always returns 0 mid-parse. Parse progress
-  is instead tracked by bytes consumed through a `countingReader` wrapper
-  (`game.go`), reported as `progress`/`total` (percent) on
-  `GET /demos/:id/status`.
-- **CS2 economy properties lie in two ways** (see `snapshotTeamEconomy` in
-  `game.go`): `Player.MoneySpentThisRound()` does *not* reset between rounds,
-  and `Player.EquipmentValueFreezetimeEnd()` read inside the
-  `RoundFreezetimeEnd` handler returns the *previous* round's snapshot. The
-  economy is therefore captured one frame after freeze time ends, using
-  live equipment values and start money snapshotted on `RoundStart` (spent
-  = start money − bank). Pistol-round equipment values can also carry
-  warmup leftovers; pistol detection uses start money ($800), which is
-  reliable.
-- **Demo names/statuses are persisted in `controllers/data/output/<id>/meta.json`**
-  (written at upload time) and reloaded by `loadPersistedDemos()` on startup.
-  The in-memory `demoStatus` map would otherwise be lost on restart. Demos
-  whose `output.json` is missing (e.g. app killed mid-parse) show up as
-  `error` after a restart.
-- **Upload/parse status lives only in memory during a run** — there is no
-  cross-process coordination. `-parse` runs are not tracked in the status map.
-- **File-serving routes sanitize the id/round params with `filepath.Base`**
-  (`demoDir()` in `demo.go`) — don't build paths from route params without it.
-- **Round/frame data is 2D (x/y only)** — the client renders on radar images
-  (`client/src/maps/`), so z is dropped.
-- `FrameRate` in `output.json` is hardcoded to 60; the demoinfocs header that
-  would give the real value isn't available for CS2 (see first bullet).
-- The knife/warmup round before `MatchStart` is discarded; round counting
-  starts from there (`currentRound` in `game.go`).
+Deeper implementation gotchas and design decisions are collected in
+[AGENTS.md](AGENTS.md).
 
 ## Project layout
 
@@ -335,7 +305,8 @@ keys, and a native desktop build.
 - CS2 demo parsing (demoinfocs) → per-round JSON: player positions/yaw/health,
   scoreboard, kills, smokes/flashes/HEs/fires, and full bomb tracking —
   carried (carrier ring + C4 badge), dropped (blinking) and planted (pulsing)
-- 2D radar replay: 0.25–4× speeds, pan/zoom/pinch, click-to-focus follow cam,
+- 2D radar replay: 0.25–4× speeds (time-accurate — timing measured from
+  the demo's own ~67 fps tick rate), pan/zoom/pinch, click-to-focus follow cam,
   movement trails, kill feed + kill markers, health bars, round bar with
   per-team buy chips and a bomb-timer pill
 
@@ -370,8 +341,9 @@ keys, and a native desktop build.
   Actions builds everything on tags (see Building)
 
 **Known limitations**
-- `FrameRate` is hardcoded to 60; the frame "LIVE" phase heuristic never
-  fires in the second half of CS2 demos (none of the analysis relies on it)
+- Playback timing assumes a uniform frame rate per round; the sparse
+  round-over segments play slightly compressed (the round clock stays
+  exact)
 - Demos parsed before the economy/roster fields shipped fall back to neutral
   coloring and lack per-round buys — re-upload to refresh them
 - No automated test suite — CI covers gofmt/vet, builds, and a boot smoke

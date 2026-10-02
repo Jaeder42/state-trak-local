@@ -6,6 +6,7 @@ import (
 	"net"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"runtime"
 	"time"
 
@@ -39,6 +40,7 @@ func main() {
 	_ = godotenv.Load()
 
 	parse := flag.String("parse", "", "parse the given .dem file and exit (writes JSON to controllers/data/output/local)")
+	reparse := flag.String("reparse", "", "re-parse a previously uploaded demo's stored .dem and refresh its output (argument is a demo id)")
 	jev := flag.String("jev", "", "analyze a parsed demo's round economies with JEV (eco/force/full detection); argument is a demo id, e.g. -jev=local")
 	addr := flag.String("addr", ":3007", "listen address")
 	data := flag.String("data", "", "data directory for uploads + parse output (default: ./controllers/data)")
@@ -50,6 +52,17 @@ func main() {
 
 	if *parse != "" {
 		controllers.ParseDemo("local", *parse)
+		return
+	}
+
+	if *reparse != "" {
+		path := controllers.UploadPath(*reparse)
+		if _, err := os.Stat(path); err != nil {
+			fmt.Println("no stored upload for that demo id:", path)
+			os.Exit(1)
+		}
+		fmt.Println("re-parsing", path)
+		controllers.ParseDemo(filepath.Base(*reparse), path)
 		return
 	}
 

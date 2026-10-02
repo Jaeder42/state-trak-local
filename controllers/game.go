@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"math"
 	"os"
 	"path/filepath"
 	"sort"
@@ -432,6 +433,10 @@ func ParseDemo(demoId string, filePath string) Game {
 	roundStartMoney := map[uint64]int{}       // bank at round start, before buys
 	prevSurvivors := map[uint64]bool{}        // players alive at the previous RoundEnd (they keep their weapons)
 	economyPending := false                   // freeze ended; capture economy on the next frame
+	// Live play is tracked by round lifecycle events, NOT GamePhase():
+	// GamePhase==2 (StartGame) is only set once per half in CS2, so the old
+	// phase heuristic never fired in the second half.
+	livePhase := false
 	smokes := map[int]SmokeState{}
 	flashes := map[int]FlashState{}
 	hes := map[int]HEState{}
@@ -505,7 +510,7 @@ func ParseDemo(demoId string, filePath string) Game {
 		}
 		phase := "PAUSED"
 		firing = []uint64{}
-		if p.GameState().GamePhase() == 2 {
+		if livePhase {
 			phase = "LIVE"
 		}
 		currentFrame := p.CurrentFrame()
@@ -754,6 +759,7 @@ func ParseDemo(demoId string, filePath string) Game {
 				roundStartMoney[m.SteamID64] = m.Money()
 			}
 		}
+		livePhase = false // freeze time
 		// CS2 lets players plant the bomb (and throw nades) after RoundEnd,
 		// during the round-over period. Reset all transient state here so a
 		// phantom post-round plant doesn't leak into the next round's frames.
@@ -770,6 +776,7 @@ func ParseDemo(demoId string, filePath string) Game {
 	})
 	p.RegisterEventHandler(func(e events.RoundEnd) {
 		// fmt.Println("Round ended ------------------------------------------------------ ")
+		livePhase = false // round-over period
 
 		// Players alive right now keep their weapons into the next round.
 		// (Deaths during the round-over period, after RoundEnd, are rare and
@@ -812,6 +819,7 @@ func ParseDemo(demoId string, filePath string) Game {
 		// CS2 demos.
 		if matchStarted && currentRound >= 0 {
 			economyPending = true
+			livePhase = true // live play until RoundEnd
 		}
 	})
 	p.RegisterEventHandler(func(e events.WeaponFire) {
@@ -886,7 +894,37 @@ func ParseDemo(demoId string, filePath string) Game {
 	if err = p.ParseToEnd(); err != nil {
 		log.Println("parse ended with error:", err)
 	}
-	frameRate := 60 // int(p.Header().PlaybackFrames / int(p.Header().PlaybackTime.Seconds()))
+	// Measure the real frame rate from the recorded frames — demoinfocs'
+	// header values are unavailable mid-parse for CS2. Use LIVE-phase frames
+	// of the round with the most live play: the demo tick rate is exact there
+	// (~67/s for CS2), while round-over periods record sparser and would skew
+	// the measurement down.
+	frameRate := 60
+	bestLive, bestLiveIdx := -1, -1
+	for i, r := range rounds {
+		n := 0
+		for _, f := range r.Frames {
+			if f.Phase == "LIVE" {
+				n++
+			}
+		}
+		if n > bestLive {
+			bestLive, bestLiveIdx = n, i
+		}
+	}
+	if bestLiveIdx >= 0 {
+		var live []FrameState
+		for _, f := range rounds[bestLiveIdx].Frames {
+			if f.Phase == "LIVE" {
+				live = append(live, f)
+			}
+		}
+		if len(live) > 1 {
+			if dt := live[len(live)-1].Time - live[0].Time; dt > 0 {
+				frameRate = int(math.Round(float64(len(live)-1) / dt))
+			}
+		}
+	}
 	game := Game{
 		Players:        players,
 		Map:            mapName,
@@ -896,11 +934,15 @@ func ParseDemo(demoId string, filePath string) Game {
 		FrameRate:      frameRate,
 		RoundCount:     len(rounds),
 	}
-	fmt.Println("Parsed game")
+	fmt.Println("Parsed game, frame rate:", frameRate)
 	outDir := filepath.Join(outputDir, demoId)
 	if err := os.MkdirAll(outDir, 0755); err != nil {
 		log.Panic("failed to create output dir: ", err)
 	}
+	// Derived analyses are cached next to the round files — a fresh parse
+	// invalidates them (also covers a re-parse with newer parser code).
+	_ = os.Remove(filepath.Join(outDir, "analysis.json"))
+	_ = os.Remove(filepath.Join(outDir, "postplant.json"))
 	for i, round := range game.Rounds {
 		fmt.Println("round", i+1, "/", len(game.Rounds))
 		roundJson, err := json.Marshal(round)
