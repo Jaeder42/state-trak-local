@@ -93,37 +93,6 @@ Platform notes:
   `make client` has run (a tracked `web/dist/.gitkeep` keeps `go:embed`
   valid on a fresh clone).
 
-### CI / GitHub Actions
-
-`.github/workflows/build.yml` stays quiet on ordinary pushes (CI runs
-where it matters) and runs on PRs:
-
-- **lint** — `gofmt -l .` must be empty, `go vet ./...`
-- **portable** — client build + `make release` cross-binaries + a boot/`/ping`
-  smoke test, artifacts uploaded; on version tags the binaries are also
-  published to the release
-
-Each desktop platform is **its own release flow** — `release-macos.yml`,
-`release-windows.yml`, `release-linux.yml` — triggered on `v*` tags and by
-manual dispatch:
-
-- **Tag push** (`git tag v0.1.0 && git push origin v0.1.0`): all four
-  workflows fire; each publishes its artifact (dmg / zip / tar.gz / portable
-  binaries) to the release. Publishing is idempotent — whichever flow wins
-  creates the release, uploads `--clobber` so re-runs replace assets
-- **Standalone run**: Actions tab → e.g. *release (windows)* → *Run
-  workflow* → pick a **tag** as the ref and check **publish** → a fresh
-  windows zip builds and attaches to that tag's release alone. Dispatching
-  with publish unchecked (or from a branch) is a build-only run, so you
-  only spend runner minutes on the platform you asked for
-- The `build_app` agent tool dispatches these same per-OS flows —
-  `build_app(os="windows", target="desktop", publish=true)` — when the
-  dispatched ref is a tag
-
-No secrets are involved: keys are bring-your-own at runtime, and the macOS
-app is ad-hoc self-signed (see the notarization notes below if you ever
-want a Gatekeeper-clean dmg).
-
 ### macOS packaging (`make dmg`)
 
 `make dmg` builds the Wails app and wraps `StateTrak.app` into
@@ -338,7 +307,7 @@ keys, and a native desktop build.
   same UI and API in-process, green-button fullscreen, per-user data dir,
   drag-to-Applications dmg
 - `make release` cross-compiles pure-Go browser-mode binaries; GitHub
-  Actions builds everything on tags (see Building)
+  Actions builds everything on tags (see AGENTS.md)
 
 **Known limitations**
 - Playback timing assumes a uniform frame rate per round; the sparse

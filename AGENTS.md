@@ -19,9 +19,12 @@ make release         # pure-Go cross-compiled binaries into release/ (browser mo
 make desktop         # Wails desktop app -> desktop/build/bin/StateTrak.app (needs the wails CLI)
 make dmg             # make desktop + release/StateTrak.dmg
 
-# CI (.github/workflows/build.yml): push/PR -> lint + portable cross-builds;
-# tags (v*) / manual dispatch -> Wails desktop matrix (mac universal, win,
-# linux webkit2_41) + GitHub release with all artifacts. No secrets needed.
+# CI: quiet on ordinary pushes; PRs -> lint + portable cross-builds
+# (build.yml, incl. a boot + /ping smoke test). v* tags -> build.yml
+# publishes the portable binaries, and each desktop platform runs its own
+# flow: release-{macos,windows,linux}.yml build + publish dmg/zip/tar.gz
+# (manual dispatch takes a `publish` input; publishing needs a tag ref).
+# No secrets — keys are bring-your-own at runtime.
 
 go vet ./...         # static analysis
 gofmt -l .           # must be empty before committing (tabs, gofmt style)
