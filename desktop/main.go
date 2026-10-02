@@ -1,7 +1,7 @@
 package main
 
 // StateTrak desktop app (Wails v2): the same gin API + embedded React UI as
-// the standalone server, served in-process through Wails' asset server and
+// the portable app binary, served in-process through Wails' asset server and
 // shown in a native window. The client keeps using plain fetch() — every
 // request that isn't a UI asset falls through to the gin router.
 //

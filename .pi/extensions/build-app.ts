@@ -5,8 +5,8 @@
  * agent a single tool instead of remembering the Makefile targets and the
  * Wails cross-OS limitations:
  *
- *   - target=server : pure-Go cross-compile, works for any os from any host
- *                     (`make release` — all four server binaries)
+ *   - target=portable : pure-Go cross-compile, works for any os from any host
+ *                     (`make release` — all four portable binaries)
  *   - target=desktop|dmg + os == the CURRENT host : local Wails build
  *                     (`make desktop` / `make dmg`; the client build is a
  *                     make dependency)
@@ -65,15 +65,15 @@ const buildApp = defineTool({
 		"target=desktop builds the Wails desktop app — locally when os matches " +
 		`the current host (${HOST_OS}), otherwise it dispatches that OS's release workflow (release-<os>.yml, needs gh authenticated) and returns the run URL. ` +
 		"target=dmg builds the macOS disk image (os must be macos). " +
-		"target=server cross-compiles the pure-Go server binaries locally for all platforms regardless of os. " +
+		"target=portable cross-compiles the pure-Go portable binaries locally for all platforms regardless of os. " +
 		"publish=true (CI dispatches only) attaches the artifact to the GitHub release — requires dispatching a tag ref.",
 	parameters: Type.Object({
 		os: Type.Union([Type.Literal("macos"), Type.Literal("windows"), Type.Literal("linux")], {
 			description: "Target operating system",
 		}),
 		target: Type.Union(
-			[Type.Literal("desktop"), Type.Literal("server"), Type.Literal("dmg")],
-			{ description: "What to build: the Wails desktop app, its macOS dmg, or the server binaries" },
+			[Type.Literal("desktop"), Type.Literal("portable"), Type.Literal("dmg")],
+			{ description: "What to build: the Wails desktop app, its macOS dmg, or the portable binaries" },
 		),
 		publish: Type.Optional(
 			Type.Boolean({
@@ -91,14 +91,14 @@ const buildApp = defineTool({
 			throw new Error("dmg is macOS-only — use target=desktop for other OSes");
 		}
 
-		// ---- server: pure Go, cross-compiles from any host ----
-		if (target === "server") {
-			onUpdate?.(`cross-compiling server binaries (client + 4 platforms)…`);
+		// ---- portable: pure Go, cross-compiles from any host ----
+		if (target === "portable") {
+			onUpdate?.(`cross-compiling portable binaries (client + 4 platforms)…`);
 			const r = await run("make", ["release"], { signal });
 			if (r.code !== 0) throw new Error(tail(r.output));
 			steps.push("make release");
 			result =
-				`Server binaries built into release/ (all four platforms — the requested "${os}" ones included):\n` +
+				`Portable binaries built into release/ (all four platforms — the requested "${os}" ones included):\n` +
 				`  release/statetrak-${os === "macos" ? "macos-arm64 + statetrak-macos-intel" : os + "-amd64"}${os === "windows" ? ".exe" : ""}\n` +
 				"These are browser-mode binaries (no window; they auto-open the default browser).";
 		}

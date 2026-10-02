@@ -11,7 +11,7 @@ agent-facing cheat sheet.
 ## Commands
 
 ```sh
-make                 # build client -> copy to web/dist -> go build (server binary, browser mode)
+make                 # build client -> copy to web/dist -> go build (portable binary, browser mode)
 make run             # build, kill whatever holds :3007, run (STATETRAK_NO_OPEN=1 — nothing pops)
 make client          # client build only (npm install first on a fresh clone)
 make clean           # remove binary + web/dist + release/ + desktop/build/bin
@@ -19,7 +19,7 @@ make release         # pure-Go cross-compiled binaries into release/ (browser mo
 make desktop         # Wails desktop app -> desktop/build/bin/StateTrak.app (needs the wails CLI)
 make dmg             # make desktop + release/StateTrak.dmg
 
-# CI (.github/workflows/build.yml): push/PR -> lint + server cross-builds;
+# CI (.github/workflows/build.yml): push/PR -> lint + portable cross-builds;
 # tags (v*) / manual dispatch -> Wails desktop matrix (mac universal, win,
 # linux webkit2_41) + GitHub release with all artifacts. No secrets needed.
 
@@ -33,14 +33,14 @@ go run . -jev=local        # JEV economy analysis of a parsed demo (TYPESAFE_API
 
 Agents running inside pi get the `build_app` tool
 (`.pi/extensions/build-app.ts`): build for a given OS with
-`build_app(os=<macos|windows|linux>, target=<desktop|server|dmg>, publish=<bool>)` —
+`build_app(os=<macos|windows|linux>, target=<desktop|portable|dmg>, publish=<bool>)` —
 local build when the OS matches the host; a per-OS CI dispatch
 (`gh workflow run release-<os>.yml`) otherwise, where publish=true attaches
 the artifact to the dispatched tag's release.
 
 A plain `go build .` works on a fresh clone (a tracked `web/dist/.gitkeep`
 keeps `go:embed` valid) but serves no UI until `make client` has run —
-it builds the plain server (browser mode). The server listens on **:3007**
+it builds the plain portable binary (browser mode). It listens on **:3007**
 (`-addr` to override) and opens the default browser on startup unless
 `STATETRAK_NO_OPEN=1`. The packaged desktop app is built separately with
 `make desktop` (Wails).
@@ -61,7 +61,7 @@ curl -s localhost:3007/demos/<id>/status                 # progress 0-100, then 
 curl -s localhost:3007/demos/<id>/rounds | head          # round/winner summaries
 curl -s localhost:3007/demos/<id>/0 | head -c 300        # frame data
 
-# restart the server, then confirm the demo still lists with its name (persistence):
+# restart the app, then confirm the demo still lists with its name (persistence):
 curl -s localhost:3007/demos
 curl -s -X DELETE localhost:3007/demos/<id>             # cleanup
 ```
@@ -116,7 +116,7 @@ client        -> fetches /demos/:id/output (metadata), /demos/:id/:round
 - `controllers/coach.go` — "AI coach" (`POST /demos/:id/coach`): the client
   sends its own OpenAI-compatible LLM config (base URL + model + key, from
   the 🔑 settings in localStorage — works with OpenAI, gateways, local
-  Ollama), the server assembles a compact context (map, rounds/buys/rosters,
+  Ollama), the Go backend assembles a compact context (map, rounds/buys/rosters,
   post-plant analysis, player sides) and proxies to
   `{baseUrl}/chat/completions`. Keys are per-request only — never logged,
   cached or persisted. Bad LLM key → 502 with the provider's error.
@@ -131,13 +131,14 @@ client        -> fetches /demos/:id/output (metadata), /demos/:id/:round
   (teams swap at halftime).
 - `web/web.go` — `go:embed` of `web/dist`: `Dist()` fs for asset servers + SPA fallback route.
 - `server/router.go` — the gin router (API routes + SPA fallback), shared by
-  the standalone server (`main.go`) and the Wails desktop app (`desktop/`).
+  the portable binary (`main.go`) and the Wails desktop app (`desktop/`).
 - `desktop/` — Wails v2 desktop app: native window running the same router
   in-process via the asset server (`make desktop`, `make dmg`).
 - `client/` — Create React App (`react-scripts`, plain JS, no TS). Components
   in `src/components/`, weapon icons in `src/utils/weapons.js`, radar maps +
   per-map config in `src/maps/`. The viewer focuses on the demo owner's team:
-  `src/utils/me.js` holds "my" Steam ID (localStorage, default = owner),
+  `src/utils/me.js` holds "my" Steam ID (localStorage, empty until set in
+  the ⚙ panel),
   scoreboard/kill feed/radar/round bar orient around it (YOUR TEAM first,
   win/loss round colors) — falls back to neutral coloring
   when the steam id isn't in the demo or the demo predates rosters.
@@ -176,7 +177,7 @@ client        -> fetches /demos/:id/output (metadata), /demos/:id/:round
   solely via `meta.json` + `output.json` presence (see `loadPersistedDemos`).
 - **Gin serves static and param siblings** on `/demos/:id/...`
   (`rounds`/`status`/`output` vs `:round`) — this works on current gin, but
-  test route changes against a running server; gin panics at startup on bad
+  test route changes against the running app; gin panics at startup on bad
   route trees.
 - **Round indexing**: warmup/knife before `MatchStart` is discarded; rounds
   start at 0 after that. Round files are named by round number, `output.json`
@@ -220,20 +221,3 @@ client        -> fetches /demos/:id/output (metadata), /demos/:id/:round
   `.gitkeep`), `statetrak`, `state-trak-local`, `*.dem`, `controllers/data/`,
   `.DS_Store` — all gitignored, keep it that way.
 
-
-## Planned: user support (not built — don't assume it exists)
-
-The app has **no user model**: whoever the proxy lets through can see,
-upload, analyze and DELETE any demo. Proxy basic auth is the only access
-control, and nginx access logs are the only per-user attribution.
-
-Planned work, in rough order:
-
-- per-user accounts (login) and per-demo ownership — only the owner (or an
-  admin) may delete a demo
-- per-user attribution for uploads and JEV analysis runs (store the
-  uploader alongside `meta.json`)
-- user-scoped demo listing by default, shared demos opt-in
-
-When building this, keep the API response shapes backward compatible with
-the existing client — it has no sophisticated error handling.

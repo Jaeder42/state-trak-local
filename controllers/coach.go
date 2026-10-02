@@ -6,7 +6,7 @@ package controllers
 //
 //	{"llm": {"baseUrl": "...", "model": "...", "apiKey": "..."}, "steamId": "..."}
 //
-// The server assembles the demo context (map, per-round winners + buy types,
+// The Go backend assembles the demo context (map, per-round winners + buy types,
 // post-plant positioning analysis, the chosen player's sides), sends it to
 // any OpenAI-compatible /chat/completions endpoint the client configured
 // (OpenAI, Anthropic-compatible gateways, local Ollama at

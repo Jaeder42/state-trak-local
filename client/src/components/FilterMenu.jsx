@@ -41,8 +41,14 @@ export const FilterMenu = ({
               placeholder="76561198…"
               spellCheck={false}
             />
-            <span className={`steam-id-status ${myTeamActive ? "ok" : ""}`}>
-              {myTeamActive ? "✓ in this demo" : "not in this demo"}
+            <span
+              className={`steam-id-status ${myTeamActive ? "ok" : ""}`}
+            >
+              {myTeamActive
+                ? "✓ in this demo"
+                : mySteamId
+                  ? "not in this demo"
+                  : "not set — add yours above"}
             </span>
           </div>
         </div>

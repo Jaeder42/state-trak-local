@@ -521,7 +521,7 @@ var analysisInflight sync.Map // demoId -> chan struct{}
 // analysis (a few seconds) and caches it as analysis.json in the demo's
 // output dir — JEV is billed once per demo (to whoever ran it first). Later
 // requests serve the cache. The key is bring-your-own: the X-TypeSafe-Key
-// request header wins, TYPESAFE_API_KEY is the server-side fallback.
+// request header wins, TYPESAFE_API_KEY is the env fallback.
 func GetAnalysis(c *gin.Context) {
 	id := c.Param("id")
 	dir := demoDir(id)
@@ -540,7 +540,7 @@ func GetAnalysis(c *gin.Context) {
 		key = os.Getenv("TYPESAFE_API_KEY")
 	}
 	if key == "" {
-		c.JSON(503, gin.H{"error": "no JEV key — add your TypeSafe key in the app settings (🔑) or set TYPESAFE_API_KEY on the server"})
+		c.JSON(503, gin.H{"error": "no JEV key — add your TypeSafe key in the app settings (🔑) or set TYPESAFE_API_KEY in the app's environment"})
 		return
 	}
 

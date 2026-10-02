@@ -1,6 +1,6 @@
 # Build flow: nothing happens on ordinary pushes (private-repo runner
-# minutes); PRs run lint + server; version tags additionally publish the
-# server binaries to the release.
+# minutes); PRs run lint + portable; version tags additionally publish the
+# portable binaries to the release.
 #
 # The desktop apps live in their own per-OS release flows (see
 # release-macos.yml / release-windows.yml / release-linux.yml): every tag
@@ -23,8 +23,8 @@ on:
   workflow_dispatch:
     # manual runs are independently selectable — uncheck what you don't want
     inputs:
-      server:
-        description: Server binaries (cross-compile + smoke test)
+      portable:
+        description: Portable binaries (cross-compile + smoke test)
         type: boolean
         default: true
 
@@ -54,11 +54,11 @@ jobs:
           fi
       - run: go vet ./...
 
-  server:
+  portable:
     # cheap (Linux only): React client + pure-Go cross-compiled binaries.
     # Deliberately not gated on lint — manual runs must be able to run it
     # alone (failed/skipped `needs` would cascade-skip it).
-    if: github.event_name != 'workflow_dispatch' || inputs.server == true
+    if: github.event_name != 'workflow_dispatch' || inputs.portable == true
     runs-on: ubuntu-latest
     permissions:
       contents: write # release upload on tag pushes
@@ -76,22 +76,22 @@ jobs:
         run: |
           cd client && npm ci && npm run build && cd ..
           rm -rf web/dist && cp -r client/build web/dist && touch web/dist/.gitkeep
-      - name: cross-compile server binaries
+      - name: cross-compile portable binaries
         run: make release
       - name: smoke test (boot + /ping)
         run: |
           STATETRAK_NO_OPEN=1 ./release/statetrak-linux-amd64 -addr=:3011 &
           for i in $(seq 1 20); do
-            if curl -sf localhost:3011/ping >/dev/null; then echo "server ok"; exit 0; fi
+            if curl -sf localhost:3011/ping >/dev/null; then echo "portable binary ok"; exit 0; fi
             sleep 0.5
           done
-          echo "server did not come up"; exit 1
+          echo "portable binary did not come up"; exit 1
       - uses: actions/upload-artifact@v4
         with:
-          name: server-binaries
+          name: portable-binaries
           path: release/*
           if-no-files-found: error
-      - name: publish server binaries to the release (tag pushes)
+      - name: publish portable binaries to the release (tag pushes)
         if: startsWith(github.ref, 'refs/tags/v')
         env:
           GH_TOKEN: ${{ github.token }}
@@ -102,4 +102,4 @@ jobs:
             || gh release view "$TAG" >/dev/null 2>&1 \
             || { echo "failed to create or find release $TAG"; exit 1; }
           gh release upload "$TAG" release/* --clobber
-          echo "published server binaries to release $TAG"
+          echo "published portable binaries to release $TAG"

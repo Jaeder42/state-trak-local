@@ -1,17 +1,61 @@
-# StateTrak local
-Backend for fetching game info from demos
+# StateTrak
 
-Uses [DemoInfoCs](https://github.com/markus-wa/demoinfocs-golang)
+**Watch your Counter-Strike 2 demos from above.** StateTrak parses `.dem`
+files and replays them as a 2D radar playback in the browser or a native
+desktop window — oriented around *your* team, with round-economy analysis,
+post-plant positioning stats, and an AI coach review powered by your own
+LLM.
 
-## Standalone usage
+Parsing is done with
+[DemoInfoCs](https://github.com/markus-wa/demoinfocs-golang); everything
+(demo files, positions, keys) stays on your machine.
 
-The whole app is one self-contained binary (UI embedded via `go:embed`,
-demo parsing is local, data lives under `./controllers/data`). Anyone can run
-it on their own machine — no server, no operator, no shared keys:
+<!-- ![playback](docs/screenshot.png) -->
 
-    make release          # pure-Go cross-compiled binaries (browser mode)
-    make desktop          # Wails desktop app (.app / window; see below)
-    ./statetrak           # or: ./statetrak -addr=:3007 -data=~/statetrak-data
+## Features
+
+- **Radar replay** — smooth playback at 0.25–4× with pan/zoom/pinch and a
+  click-to-focus follow cam; movement trails, kill feed + kill markers,
+  health bars, smokes/flashes/HEs, and full bomb tracking (carried, dropped,
+  planted — with a bomb-timer pill)
+- **Your team first** — set your Steam ID once and the whole viewer orients
+  around you: your team on top of the scoreboard ("YOUR TEAM" / "ENEMY"),
+  your row and your dot highlighted, your kills green and teammate deaths
+  red, round buttons colored win/loss — correct through halftime side swaps
+- **Round economy** — per-round buy snapshots with a heuristic
+  pistol/eco/force/hero/kept/half/full classification, plus optional
+  [JEV](https://typesafe.ai) analysis (TypeSafe's "System One") that judges
+  every buy semantically and flags where it disagrees with the baseline
+- **Post-plant positioning** — T setup spread/distance/movement, CT retake
+  entry timing and grouping, correlated with outcomes (defused / exploded /
+  eliminated), per-round and aggregate radar maps, watch-from-plant jumps,
+  and a deterministic good/bad-pattern writeup for any chosen player's team
+- **AI coach** — a written review of your demo from *your own*
+  OpenAI-compatible LLM (OpenAI, a gateway, or a local Ollama); the server
+  assembles the context, your key never leaves the request
+- **Bring your own keys** — the TypeSafe (JEV) key and the LLM config live in
+  your browser (🔑 settings), are sent per request, and are never stored
+  server-side
+- **Standalone** — one self-contained binary (UI embedded via `go:embed`),
+  or a native desktop window via Wails
+
+## Try it
+
+Grab a binary from [Releases](https://github.com/Jaeder42/state-trak-local/releases)
+and run it — the default browser opens at `localhost:3007`, upload a `.dem`,
+and press play:
+
+    ./statetrak                       # listens on :3007, opens the browser
+    ./statetrak -addr=:3011 -data=~/statetrak-data
+
+- **macOS desktop app** — `StateTrak-macos.dmg` (universal): drag to
+  /Applications; closing the window quits the app; data lives in
+  `~/Library/Application Support/StateTrak`
+- **Portable binaries** — `statetrak-macos-arm64/-intel`, `statetrak-linux-amd64`,
+  `statetrak-windows-amd64.exe`: same app without the window — run it and
+  it opens in your default browser. No cgo, no install, works everywhere
+- Downloaded dmgs are ad-hoc signed: right-click → *Open* on first launch
+  (see [macOS packaging](#macos-packaging-make-dmg) for notarization)
 
 ## Building
 
@@ -31,7 +75,7 @@ Targets:
 
 | Target | Produces | Notes |
 | --- | --- | --- |
-| `make` | `./statetrak` | server binary, browser mode, UI embedded |
+| `make` | `./statetrak` | portable binary, browser mode, UI embedded |
 | `make run` | — | `make` + restart on :3007 (no window/browser pops) |
 | `make client` | `web/dist` | React build only, no Go |
 | `make desktop` | `desktop/build/bin/StateTrak.app` | Wails app — native window; needs the wails CLI + platform webview SDK, build on the target OS |
@@ -63,8 +107,8 @@ make/wails/gh command chains.
 
 ### CI / GitHub Actions
 
-`.github/workflows/build.yml` stays quiet on ordinary pushes (runner minutes
-on a private repo) and runs on PRs:
+`.github/workflows/build.yml` stays quiet on ordinary pushes (CI runs
+where it matters) and runs on PRs:
 
 - **lint** — `gofmt -l .` must be empty, `go vet ./...`
 - **server** — client build + `make release` cross-binaries + a boot/`/ping`
@@ -82,15 +126,14 @@ manual dispatch:
 - **Standalone run**: Actions tab → e.g. *release (windows)* → *Run
   workflow* → pick a **tag** as the ref and check **publish** → a fresh
   windows zip builds and attaches to that tag's release alone. Dispatching
-  with publish unchecked (or from a branch) is a build-only run — macOS
-  runner minutes bill at 10× on private repos, so standalone runs put you in
-  control of which platform spends them
-- The `build_app` agent tool (below) dispatches these same per-OS flows —
+  with publish unchecked (or from a branch) is a build-only run, so you
+  only spend runner minutes on the platform you asked for
+- The `build_app` agent tool dispatches these same per-OS flows —
   `build_app(os="windows", target="desktop", publish=true)` — when the
   dispatched ref is a tag
 
 No secrets are involved: keys are bring-your-own at runtime, and the macOS
-app is ad-hoc self-signed (see the notarization notes above if you ever
+app is ad-hoc self-signed (see the notarization notes below if you ever
 want a Gatekeeper-clean dmg).
 
 ### macOS packaging (`make dmg`)
@@ -136,18 +179,8 @@ through to the gin router. Data goes to `~/Library/Application Support/StateTrak
 (`-data` overrides) since a Finder-launched app has no usable working dir.
 The window is fullscreenable via the native ⤢ button or **F11** (the same
 shortcut works in browser mode via the Fullscreen API). Toolchain
-requirements live in **Building** above. `STATETRAK_NO_OPEN=1`
-suppresses the browser in server mode (set in `make run` and
-`deploy/statetrak.service`).
-
-Each user brings their own
-keys via the in-app **🔑 settings panel** (stored in the browser, sent per
-request — never saved server-side):
-
-- **TypeSafe (JEV)** key for `/demos/:id/analysis`
-- **LLM** — any OpenAI-compatible endpoint (base URL + model + key), powering
-  the “AI coach” review: OpenAI, a gateway, or a local Ollama at
-  `http://localhost:11434/v1`
+requirements live in **Building** above. `STATETRAK_NO_OPEN=1` suppresses
+the browser in portable mode (set in `make run`).
 
 ## Usage
 
@@ -160,20 +193,16 @@ Parse a demo offline without starting the server (writes JSON to
 
     go run . -parse=path/to/demo.dem
 
-The viewer orients around **your team**: the settings panel (⚙) stores your
-Steam ID in localStorage (defaulting to the owner's account,
-`client/src/utils/me.js`). With it set, the scoreboard puts your team first
-("YOUR TEAM" / "ENEMY") and highlights your row, the radar draws a halo
-around your own dot, the kill feed
-and timeline mark your team's kills green and teammate deaths red, and the
-round bar colors rounds win/loss from your perspective. Demos parsed before
-the roster field shipped lack per-round team info and fall back to the old
-neutral coloring — re-upload them to get it.
+**Your team.** The ⚙ panel stores your Steam ID in localStorage (empty
+until you set it — `client/src/utils/me.js` holds the logic). With no ID
+set the viewer stays neutral. Demos parsed before the roster field shipped
+lack per-round team info and fall back to neutral coloring — re-upload
+them to get it.
 
-Analyze a parsed demo's round economies with [JEV](https://typesafe.ai)
-(TypeSafe's "System One" decision model) — classifies each team's buy per
-round (pistol / eco / force / half / full) and prints where JEV's semantic
-judgment disagrees with the parser's deterministic threshold baseline:
+**JEV economy analysis** (TypeSafe's "System One" decision model) —
+classifies each team's buy per round (pistol / eco / force / half / full)
+and prints where JEV's semantic judgment disagrees with the parser's
+deterministic threshold baseline:
 
     TYPESAFE_API_KEY=... go run . -jev=local   # live analysis (key: console.typesafe.ai)
     go run . -jev=local                        # dry run: baseline + example request only
@@ -191,7 +220,7 @@ The key can also live in a `.env` file in the repo root (`TYPESAFE_API_KEY=...`)
 | `DELETE /demos/:id` | delete upload + output |
 | `GET /demos/:id/output` | game metadata (map, players, frame rate) |
 | `GET /demos/:id/rounds` | round list with winners, per-team buy types and per-team rosters (steam ids, from the round's economy snapshot) |
-| `GET /demos/:id/analysis` | JEV buy-type analysis per round (cached after the first call; key bring-your-own via `X-TypeSafe-Key` header, server env as fallback) |
+| `GET /demos/:id/analysis` | JEV buy-type analysis per round (cached after the first call; key bring-your-own via `X-TypeSafe-Key` header, app env as fallback) |
 | `POST /demos/:id/coach` | AI coach review for one player's team — server assembles demo context (rounds, buys, post-plant) and calls the OpenAI-compatible LLM from the request body; key never persisted |
 | `GET /demos/:id/postplant` | post-plant positioning per planted round — T setups (spread, distance to bomb, movement), CT retake entries (timing, grouping), and how each correlates with the outcome (cached after the first call). The panel also writes out good/bad pattern bullets for a chosen player's team (`client/src/utils/postplantText.js`) |
 | `GET /demos/:id/:round` | full per-frame data for one round |
@@ -206,25 +235,10 @@ startup, real env vars win):
 
 | Variable | Default | Description |
 | --- | --- | --- |
-| `TYPESAFE_API_KEY` | — | JEV analysis key (https://console.typesafe.ai). Server-side fallback for `-jev` and `/demos/:id/analysis` — a per-request `X-TypeSafe-Key` header (🔑 app settings) wins |
-| `STATETRAK_NO_OPEN` | — | set to `1` to not open the browser on startup (headless servers; set in `deploy/statetrak.service`) |
+| `TYPESAFE_API_KEY` | — | JEV analysis key (https://console.typesafe.ai). Fallback from the environment or `.env` for `-jev` and `/demos/:id/analysis` — a per-request `X-TypeSafe-Key` header (🔑 app settings) wins |
+| `STATETRAK_NO_OPEN` | — | set to `1` to not open the browser on startup in portable mode (set in `make run`) |
 | `UPLOAD_MAX_BYTES` | `1073741824` | max `.dem` upload size |
 | `PARSE_CONCURRENCY` | `1` | concurrent demo parses (each parse is RAM-heavy) |
-| `ALLOWED_ORIGIN` | — | enable CORS for one origin; the embedded client is same-origin and needs nothing |
-
-## Deploying
-
-Single binary behind a reverse proxy (nginx or Caddy: TLS + basic auth —
-the app itself has no auth). Human runbook: `deploy/README.md`; there is
-also an agent-executable runbook in `AGENTS.md` ("Server deployment") for
-letting a coding agent on the VPS do the setup.
-
-**Known limitation — user support is planned.** Auth is proxy-level basic
-auth only: everyone who logs in shares full access (any friend can delete
-any demo), there's no per-user attribution beyond nginx logs, and revoking
-someone means editing the htpasswd. Proper user support — per-user accounts,
-per-demo ownership, owner-only deletes — belongs in the app eventually.
-Until then the proxy auth must stay enabled.
 
 ## How parsing works
 
@@ -299,12 +313,16 @@ controllers/
   demo.go            upload/list/status/delete, status persistence
   game.go            ParseDemo(): demo -> JSON round files
   round.go           round/rounds endpoints
-web/web.go           embeds client build (web/dist) + SPA fallback
 client/              React viewer (Create React App)
   src/components/    Games, RoundSelector, ScoreBoard, Controls, ...
   src/maps/          radar images + per-map config
 controllers/data/    uploads + parse output (gitignored)
 ```
+
+## License
+
+MIT — see [LICENSE](LICENSE).
+
 ## Release notes
 
 Convention: every tagged release gets a short section here (and the GitHub
@@ -356,13 +374,11 @@ keys, and a native desktop build.
   Actions builds everything on tags (see Building)
 
 **Known limitations**
-- No user accounts — a server deployment's only access control is proxy
-  basic auth; anyone let in shares full demo access
 - `FrameRate` is hardcoded to 60; the frame "LIVE" phase heuristic never
   fires in the second half of CS2 demos (none of the analysis relies on it)
 - Demos parsed before the economy/roster fields shipped fall back to neutral
   coloring and lack per-round buys — re-upload to refresh them
 - No automated test suite — CI covers gofmt/vet, builds, and a boot smoke
-  test; real parsing is verified manually against `test.dem` locally
+  test; real parsing is verified manually against a local demo
 - The macOS dmg is ad-hoc signed (right-click → Open on first launch);
   notarization is documented but requires an Apple Developer account

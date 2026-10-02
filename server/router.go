@@ -1,14 +1,13 @@
 package server
 
-// The HTTP surface shared by the standalone server (main.go) and the Wails
+// The HTTP surface shared by the portable binary (main.go) and the Wails
 // desktop app (desktop/): one gin router with the API routes and the
-// embedded SPA fallback.
+// embedded SPA fallback. Runs in-process for the local app only — there is
+// no deployment/hosting story.
 
 import (
 	"net/http"
-	"os"
 
-	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
 	"jaeder42.tech/state-trak-local/controllers"
 	"jaeder42.tech/state-trak-local/web"
@@ -16,16 +15,11 @@ import (
 
 func NewRouter() *gin.Engine {
 	router := gin.Default()
-	// The client is served same-origin, so no CORS is needed by default.
-	// Set ALLOWED_ORIGIN to explicitly enable a cross-origin client.
-	if origin := os.Getenv("ALLOWED_ORIGIN"); origin != "" {
-		router.Use(cors.New(cors.Config{
-			AllowOrigins:  []string{origin},
-			AllowMethods:  []string{"GET", "POST", "DELETE", "OPTIONS"},
-			AllowHeaders:  []string{"Origin", "Content-Type", "Accept", "X-TypeSafe-Key"},
-			ExposeHeaders: []string{"Content-Disposition"},
-		}))
-	}
+	router.GET("/ping", func(c *gin.Context) {
+		c.JSON(http.StatusOK, gin.H{
+			"message": "pong",
+		})
+	})
 	router.GET("/ping", func(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{
 			"message": "pong",

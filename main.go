@@ -14,10 +14,9 @@ import (
 	"jaeder42.tech/state-trak-local/server"
 )
 
-// openBrowser launches the default browser at url — the standalone-app UX:
-// run the binary, the UI appears. Opt out with STATETRAK_NO_OPEN=1 (used by
-// the systemd unit on the server, where there is no browser to open).
-// For the packaged desktop window see desktop/ (Wails).
+// openBrowser launches the default browser at url — the portable-mode UX:
+// run the binary, the UI appears. Opt out with STATETRAK_NO_OPEN=1 (set in
+// `make run`). For the packaged desktop window see desktop/ (Wails).
 func openBrowser(url string) {
 	if os.Getenv("STATETRAK_NO_OPEN") != "" {
 		return
@@ -73,7 +72,7 @@ func main() {
 	url := fmt.Sprintf("http://localhost%s", portOf(ln))
 	fmt.Println("StateTrak listening on", url)
 	go func() {
-		// give the server a moment to be ready, then pop the UI
+		// give the app a moment to be ready, then pop the UI
 		time.Sleep(300 * time.Millisecond)
 		openBrowser(url)
 	}()
