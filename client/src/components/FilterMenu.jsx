@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 
 export const FilterMenu = ({
   filters,
@@ -8,6 +8,15 @@ export const FilterMenu = ({
   myTeamActive,
 }) => {
   const [open, setOpen] = useState(false);
+
+  useEffect(() => {
+    if (!open) return undefined;
+    const onKey = (e) => {
+      if (e.key === "Escape") setOpen(false);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [open]);
 
   const item = (key, label) => (
     <label>
@@ -21,6 +30,7 @@ export const FilterMenu = ({
       <button
         className="filter-toggle"
         onClick={() => setOpen((o) => !o)}
+        aria-label="Display filters"
         title="Display filters"
       >
         ⚙

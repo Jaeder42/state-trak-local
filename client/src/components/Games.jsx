@@ -8,6 +8,8 @@ import { AnalysisPanel } from "./AnalysisPanel.jsx";
 import { PostPlantPanel } from "./PostPlantPanel.jsx";
 import { SettingsMenu } from "./SettingsMenu.jsx";
 import { CoachPanel } from "./CoachPanel.jsx";
+import { ShortcutsHelp } from "./ShortcutsHelp.jsx";
+import { UploadProgress } from "./DemoMenu.jsx";
 import { getSetting, getLLMConfig, llmConfigured } from "../utils/settings";
 import { FilterMenu } from "./FilterMenu.jsx";
 import { mapDisplayName } from "../maps/config";
@@ -38,7 +40,8 @@ export const Games = () => {
   const [postplant, setPostplant] = useState(null); // { loading } | { data }
   const [coach, setCoach] = useState(null); // { loading } | { text, model }
   const [uploadProgress, setUploadProgress] = useState(null);
-  const [toast, setToast] = useState(null);
+  const [toast, setToast] = useState(null); // { msg, kind } | null
+  const [dropActive, setDropActive] = useState(false);
   const [filters, setFilters] = useState({
     health: true,
     names: true,
@@ -47,6 +50,8 @@ export const Games = () => {
   });
   const [mySteamId, setMySteamIdState] = useState(() => getMySteamId());
   const toastTimer = useRef(null);
+  const dragDepth = useRef(0); // dragenter/leave fire per child — count depth
+  const emptyFileInputRef = useRef(null);
   const roundFetchId = useRef(0);
   // frame index to jump to once the next round finishes loading
   // (PostPlantPanel "watch from plant" jumps)
@@ -181,8 +186,8 @@ export const Games = () => {
     persistMySteamId(id);
   };
 
-  const showToast = (msg) => {
-    setToast(msg);
+  const showToast = (msg, kind = "info") => {
+    setToast({ msg, kind });
     if (toastTimer.current) clearTimeout(toastTimer.current);
     toastTimer.current = setTimeout(() => setToast(null), 5000);
   };
@@ -274,16 +279,21 @@ export const Games = () => {
         setMetaData({});
       }
       await fetchDemos();
+      showToast("Demo deleted", "info");
     } catch (err) {
       console.error(err);
     }
   };
 
-  // Upload via XHR so we get real upload progress, then poll parse progress.
-  const onUpload = (e) => {
-    const file = e.target.files?.[0];
+  // Upload via XHR so we get real upload progress, then poll parse
+  // progress. Shared by the menu's file input, the empty-state button and
+  // drag & drop.
+  const startUpload = (file) => {
     if (!file) return;
-    e.target.value = ""; // allow re-selecting the same file
+    if (!/\.dem$/i.test(file.name)) {
+      showToast("Not a .dem file: " + file.name, "error");
+      return;
+    }
     setUploading(true);
     setUploadProgress({ phase: "uploading", pct: 0 });
     const form = new FormData();
@@ -307,15 +317,39 @@ export const Games = () => {
         console.error(err);
         setUploading(false);
         setUploadProgress(null);
-        showToast("Upload failed: " + (xhr.responseText || "unknown error"));
+        showToast("Upload failed: " + (xhr.responseText || "unknown error"), "error");
       }
     };
     xhr.onerror = () => {
       setUploading(false);
       setUploadProgress(null);
-      showToast("Upload failed");
+      showToast("Upload failed", "error");
     };
     xhr.send(form);
+  };
+
+  const onUpload = (e) => {
+    const file = e.target.files?.[0];
+    e.target.value = ""; // allow re-selecting the same file
+    startUpload(file);
+  };
+
+  // Drag & drop: a .dem dropped anywhere on the window uploads.
+  const onDragEnter = (e) => {
+    e.preventDefault();
+    dragDepth.current++;
+    setDropActive(true);
+  };
+  const onDragLeave = () => {
+    dragDepth.current = Math.max(0, dragDepth.current - 1);
+    if (dragDepth.current === 0) setDropActive(false);
+  };
+  const onDrop = (e) => {
+    e.preventDefault();
+    dragDepth.current = 0;
+    setDropActive(false);
+    const file = e.dataTransfer.files?.[0];
+    if (file) startUpload(file);
   };
 
   const pollStatus = (id) => {
@@ -356,16 +390,36 @@ export const Games = () => {
       } else if (e.key === "ArrowRight") {
         e.preventDefault();
         setPlaying(false);
-        setIndex((i) => Math.min(i + 1, (output.frames?.length ?? 1) - 1));
+        setIndex((i) => {
+          const max = (output.frames?.length ?? 1) - 1;
+          const step = e.shiftKey ? Math.max(1, Math.round(5000 / tickMs)) : 1;
+          return Math.min(i + step, max);
+        });
       } else if (e.key === "ArrowLeft") {
         e.preventDefault();
         setPlaying(false);
-        setIndex((i) => Math.max(i - 1, 0));
+        setIndex((i) => {
+          const step = e.shiftKey ? Math.max(1, Math.round(5000 / tickMs)) : 1;
+          return Math.max(i - step, 0);
+        });
+      } else if (e.key === "Home") {
+        e.preventDefault();
+        setPlaying(false);
+        setIndex(0);
+      } else if (e.key === "End") {
+        e.preventDefault();
+        setPlaying(false);
+        setIndex((output.frames?.length ?? 1) - 1);
       } else if (e.key === "F11") {
         e.preventDefault();
         toggleFullscreen();
       } else if (e.key === "Escape") {
-        setFocusPlayer(null);
+        // Close the topmost layer first: panels (they cover the menus), then
+        // the focus cam. Open menus close themselves on Escape.
+        if (coach?.text) setCoach(null);
+        else if (postplant?.data) setPostplant(null);
+        else if (analysis?.data) setAnalysis(null);
+        else setFocusPlayer(null);
       } else if (e.key === "," || e.key === "[") {
         e.preventDefault();
         if (round > 0) {
@@ -382,7 +436,15 @@ export const Games = () => {
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [output.frames?.length, round, rounds.length]);
+  }, [
+    output.frames?.length,
+    round,
+    rounds.length,
+    tickMs,
+    coach,
+    postplant,
+    analysis,
+  ]);
 
   // Throttle scoreboard updates to ~5Hz; the tables don't need 60fps.
   const sbIndex = output.frames
@@ -431,7 +493,19 @@ export const Games = () => {
   }, [rounds, mySteamId]);
 
   return (
-    <div>
+    <div
+      onDragEnter={onDragEnter}
+      onDragLeave={onDragLeave}
+      onDragOver={(e) => e.preventDefault()}
+      onDrop={onDrop}
+    >
+      <input
+        ref={emptyFileInputRef}
+        type="file"
+        accept=".dem"
+        style={{ display: "none" }}
+        onChange={onUpload}
+      />
       <DemoMenu
         demos={demos}
         demoId={demoId}
@@ -475,16 +549,36 @@ export const Games = () => {
         />
       )}
 
-      {toast && <div className="toast">{toast}</div>}
+      {toast && <div className={`toast ${toast.kind}`}>{toast.msg}</div>}
+
+      {dropActive && (
+        <div className="drop-overlay">Drop .dem to upload</div>
+      )}
+
+      {uploadProgress && (
+        <div className="upload-progress-float">
+          <UploadProgress progress={uploadProgress} />
+        </div>
+      )}
 
       {!demoId ? (
         <div className="empty-state">
           <img className="splash-logo" src={BANNER} alt="StateTrak" />
-          <p>Upload or select a demo to begin</p>
-          <SettingsMenu label="🔑 AI settings" />
+          <p>Upload or select a demo to begin — or drop a .dem anywhere</p>
+          <div className="empty-state-actions">
+            <button
+              className="settings-toggle labeled"
+              onClick={() => emptyFileInputRef.current?.click()}
+            >
+              Upload .dem
+            </button>
+            <SettingsMenu label="🔑 AI settings" />
+          </div>
         </div>
       ) : loading ? (
-        <div className="empty-state">…loading</div>
+        <div className="empty-state">
+          <div className="loading-note">Loading demo…</div>
+        </div>
       ) : (
         <>
           <h1 className="map-title">
@@ -528,6 +622,7 @@ export const Games = () => {
               myTeamActive={!!myTeam}
             />
             <SettingsMenu />
+            <ShortcutsHelp />
           </Controls>
 
           <RoundSelector

@@ -22,7 +22,18 @@ export const RoundSelector = ({
   myTeamByRound,
 }) => {
   const frames = output?.frames;
-  if (!rounds || !rounds.length || !frames?.length) return null;
+  if (!rounds || !rounds.length) return null;
+  if (!frames?.length) {
+    // Keep the bar's shell (and its height) while a round loads — the
+    // whole layout used to jump when this returned null.
+    return (
+      <div className="round-selector round-loading">
+        <span className="round-loading-note">
+          Loading round {currentRound + 1}…
+        </span>
+      </div>
+    );
+  }
 
   const max = frames.length - 1;
   const first = frames[0];
@@ -69,7 +80,8 @@ export const RoundSelector = ({
                 key={i}
                 className={`tl-kill ${markerClass}`}
                 style={{ left: `${(k.idx / max) * 100}%` }}
-                title={`${k.attacker} killed ${k.victim} (${k.weapon})`}
+                title={`${k.attacker} killed ${k.victim} (${k.weapon}) — click to jump`}
+                onClick={() => onIndexChange(k.idx)}
               />
             );
           })}
@@ -77,7 +89,8 @@ export const RoundSelector = ({
             <div
               className="tl-bomb"
               style={{ left: `${(plantIndex / max) * 100}%` }}
-              title="Bomb planted"
+              title="Bomb planted — click to jump"
+              onClick={() => onIndexChange(plantIndex)}
             />
           )}
         </div>

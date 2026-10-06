@@ -1,4 +1,24 @@
-import React, { useRef, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
+import { prettyDemoName } from "../utils/demoName";
+
+// Upload/parse progress readout — shown inside the menu and, while active,
+// as a floating chip that survives the menu being closed (Games renders
+// the float itself with the same component).
+export const UploadProgress = ({ progress }) =>
+  progress ? (
+    <div className="upload-progress">
+      <div className="upload-progress-label">
+        {progress.phase === "uploading" ? "Uploading" : "Parsing"}{" "}
+        {progress.pct}%
+      </div>
+      <div className="upload-progress-track">
+        <div
+          className="upload-progress-fill"
+          style={{ width: `${progress.pct}%` }}
+        />
+      </div>
+    </div>
+  ) : null;
 
 export const DemoMenu = ({
   demos,
@@ -18,11 +38,23 @@ export const DemoMenu = ({
   const [open, setOpen] = useState(false);
   const fileInputRef = useRef(null);
 
+  // Close on Escape — panels above this menu handle their own layering in
+  // Games' keydown; menus just dismiss themselves.
+  useEffect(() => {
+    if (!open) return undefined;
+    const onKey = (e) => {
+      if (e.key === "Escape") setOpen(false);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [open]);
+
   return (
     <div className="demo-menu">
       <button
         className="demo-menu-toggle"
         onClick={() => setOpen((o) => !o)}
+        aria-label="Demos menu"
         title="Demos"
       >
         ☰
@@ -39,11 +71,16 @@ export const DemoMenu = ({
             <option value="" disabled>
               Select a demo
             </option>
-            {demos.map((d) => (
-              <option key={d.id} value={d.id}>
-                {d.name} {d.status === "parsing" ? "(parsing…)" : ""}
-              </option>
-            ))}
+            {demos.map((d) => {
+              const pretty = prettyDemoName(d.name);
+              return (
+                <option key={d.id} value={d.id} title={d.name}>
+                  {pretty.title}
+                  {pretty.sub ? ` · ${pretty.sub}` : ""}{" "}
+                  {d.status === "parsing" ? "(parsing…)" : ""}
+                </option>
+              );
+            })}
           </select>
           <button
             onClick={() => fileInputRef.current?.click()}
@@ -51,20 +88,7 @@ export const DemoMenu = ({
           >
             {uploading ? "Uploading…" : "Upload .dem"}
           </button>
-          {uploadProgress && (
-            <div className="upload-progress">
-              <div className="upload-progress-label">
-                {uploadProgress.phase === "uploading" ? "Uploading" : "Parsing"}{" "}
-                {uploadProgress.pct}%
-              </div>
-              <div className="upload-progress-track">
-                <div
-                  className="upload-progress-fill"
-                  style={{ width: `${uploadProgress.pct}%` }}
-                />
-              </div>
-            </div>
-          )}
+          {uploadProgress && <UploadProgress progress={uploadProgress} />}
           {demoId && (
             <button
               onClick={() => onRunCoach(demoId)}

@@ -13,6 +13,7 @@ export const Controls = ({ playing, onTogglePlay, speed, onSpeedChange, children
             className={`speed-button ${speed === s ? "active" : ""}`}
             onClick={() => onSpeedChange(s)}
             title={`${s}× playback speed`}
+            aria-label={`${s}× playback speed`}
           >
             {s}×
           </button>
@@ -22,6 +23,7 @@ export const Controls = ({ playing, onTogglePlay, speed, onSpeedChange, children
         className="play-toggle"
         onClick={() => onTogglePlay(!playing)}
         title={playing ? "Pause (Space)" : "Play (Space)"}
+        aria-label={playing ? "Pause" : "Play"}
       >
         {playing ? "❚❚" : "▶"}
       </button>

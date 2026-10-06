@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { getSetting, setSetting } from "../utils/settings";
 
 // 🔑 bring-your-own keys: TypeSafe (JEV) + any OpenAI-compatible LLM.
@@ -13,6 +13,15 @@ export const SettingsMenu = ({ label }) => {
     llmModel: getSetting("llmModel"),
     llmKey: getSetting("llmKey"),
   }));
+
+  useEffect(() => {
+    if (!open) return undefined;
+    const onKey = (e) => {
+      if (e.key === "Escape") setOpen(false);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [open]);
 
   const change = (key) => (e) => {
     const value = e.target.value;
@@ -39,6 +48,7 @@ export const SettingsMenu = ({ label }) => {
       <button
         className={label ? "settings-toggle labeled" : "filter-toggle"}
         onClick={() => setOpen((o) => !o)}
+        aria-label="Keys & AI settings"
         title="Keys & AI settings"
       >
         {label ?? "🔑"}

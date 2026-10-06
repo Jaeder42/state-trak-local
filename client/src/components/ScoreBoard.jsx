@@ -56,6 +56,7 @@ export const ScoreBoard = ({
       </h2>
       <TeamScoreBoard
         teamScores={teamScores}
+        econ={econ}
         onSelectPlayer={onSelectPlayer}
         focusPlayer={focusPlayer}
         mySteamId={mySteamId}
