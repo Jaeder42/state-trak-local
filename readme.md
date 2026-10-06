@@ -148,8 +148,7 @@ Build & run (prerequisites and all targets in **Building**; listens on `:3007`):
 
     make
 
-Parse a demo offline without starting the app (writes JSON to
-`controllers/data/output/local`):
+Parse a demo offline without starting the app (stored as demo id `local`):
 
     go run . -parse=path/to/demo.dem
 
@@ -183,7 +182,7 @@ The key can also live in a `.env` file in the repo root (`TYPESAFE_API_KEY=...`)
 | `POST /upload` | upload a `.dem`, kicks off async parsing, returns `{id}` |
 | `GET /demos` | list demos (id, name, status) |
 | `GET /demos/:id/status` | parse status incl. live progress |
-| `DELETE /demos/:id` | delete upload + output |
+| `DELETE /demos/:id` | delete upload + stored data |
 | `GET /demos/:id/output` | game metadata (map, players, frame rate) |
 | `GET /demos/:id/rounds` | round list with winners, per-team buy types and per-team rosters (steam ids, from the round's economy snapshot) |
 | `GET /demos/:id/analysis` | JEV buy-type analysis per round (cached after the first call; key bring-your-own via `X-TypeSafe-Key` header, app env as fallback) |
@@ -214,12 +213,15 @@ bomb planted, kill, ...) and accumulates per-round `FrameState`s: player
 positions, yaw, health, weapons, scoreboard, smokes/flashes/HEs/fires, grenade
 projectiles, bomb state. `bombState` tracks the C4 through all its states:
 carried (with the carrier's steam id + position), dropped (last position on
-the ground), and planted. Output is written per round (`<round>.json`), which
-contains the frames, the round winner, and a `kills` array (`KillEvent`:
+the ground), and planted. Everything is stored in an embedded sqlite database
+(`controllers/data/statetrak.db`, pure Go — no cgo): each round's frames,
+winner, and `kills` array (`KillEvent`:
 attacker/victim names, steam ids, teams, weapon, headshot flag, and the
 victim's death position — the client uses it for the kill feed, kill markers,
-timeline notches, and fading dead dots), plus a `output.json` with game
-metadata. Round files also contain an `economy` object per round — each
+timeline notches, and fading dead dots) live as one gzip-compressed blob per
+round (served to the browser with `Content-Encoding: gzip`), with winner,
+per-team buys and kills also in queryable columns and the game metadata on
+the demo row. Round blobs also contain an `economy` object per round — each
 team's buy captured just after freeze time ends: per-player start money,
 spent, bank, primary weapon held, equipment value, armor/helmet/defuse, plus team aggregates
 (average equipment value, average/total spent), a count of players who
@@ -240,13 +242,14 @@ server/router.go     the gin router (API routes + SPA fallback) — shared with 
 web/web.go           embeds client build (web/dist): Dist() fs + SPA handler
 desktop/             Wails desktop app (main.go, wails.json, build/ scaffold)
 controllers/
-  demo.go            upload/list/status/delete, status persistence
-  game.go            ParseDemo(): demo -> JSON round files
-  round.go           round/rounds endpoints
+  demo.go            upload/list/status/delete, store-backed status persistence
+  game.go            ParseDemo(): demo -> store
+  round.go           round/rounds endpoints (gzip passthrough)
+  store.go           sqlite store: demos/rounds/kills/caches + legacy importer
 client/              React viewer (Create React App)
   src/components/    Games, RoundSelector, ScoreBoard, Controls, ...
   src/maps/          radar images + per-map config
-controllers/data/    uploads + parse output (gitignored)
+controllers/data/    uploads + sqlite store (gitignored)
 ```
 
 ## Agent tooling (`build_app`)
@@ -267,7 +270,28 @@ command chains.
 Convention: every tagged release gets a short section here (and the GitHub
 release body can lift it). Sections append newest-first.
 
-### v0.1.0 — first tagged release
+### v0.0.3 — sqlite storage
+
+The per-demo JSON file trees are replaced by an embedded sqlite database
+(`controllers/data/statetrak.db`, pure-Go driver — builds stay cgo-free).
+- ~25× smaller on disk (round frames stored as gzip blobs) and ~100×
+  faster round summaries; `/demos/:id/:round` ships the gzip straight
+  through with `Content-Encoding: gzip` (a 30MB round travels as ~0.7MB)
+- names, status and errors persist in the `demos` table — interrupted
+  parses are swept to `error` on boot and recoverable via `-reparse`
+- a `kills` table is filled at parse time for future cross-demo queries
+- demos parsed before the switch import automatically on first launch;
+  the old trees stay on disk as backup until deleted manually
+- all API responses are byte-identical to the previous build (verified
+  by diffing every endpoint), so the client needed zero changes
+
+### v0.0.2 — pre-public polish
+
+Pre-public cleanup (hosting layer dropped, personal defaults cleared),
+MIT license + third-party notices (served at `/THIRD_PARTY_NOTICES.md`),
+playback/frame-rate fixes, readme restructure.
+
+### v0.0.1 — first tagged release
 
 The complete app as it stands: demo parsing, radar playback, team-oriented
 review, three analysis layers, standalone distribution with bring-your-own

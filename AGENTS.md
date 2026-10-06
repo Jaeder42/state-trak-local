@@ -29,7 +29,7 @@ make dmg             # make desktop + release/StateTrak.dmg
 go vet ./...         # static analysis
 gofmt -l .           # must be empty before committing (tabs, gofmt style)
 
-go run . -parse=test.dem   # offline parse, writes controllers/data/output/local/
+go run . -parse=test.dem   # offline parse into the store (demo id "local")
 go run . -reparse=<id>    # re-parse a stored upload with the current parser (refreshes stale output + clears derived caches)
 go run . -jev=local        # JEV economy analysis of a parsed demo (TYPESAFE_API_KEY from env or .env; dry run without it)
 ./statetrak -addr=:3011 -data=/some/dir   # standalone run: custom port/data dir, opens the browser
@@ -70,25 +70,31 @@ curl -s localhost:3007/demos
 curl -s -X DELETE localhost:3007/demos/<id>             # cleanup
 ```
 
-`controllers/data/` (uploads + output) is gitignored — safe to create/delete
-freely during testing. Leave it as you found it (the repo has some pre-existing
-`controllers/data/output/*.json` from old manual runs; don't touch those).
+`controllers/data/` (uploads + sqlite db + legacy output) is gitignored — safe to
+create/delete freely during testing. Leave it as you found it (the repo has some
+pre-existing `controllers/data/output/*.json` from old manual runs; don't touch
+those).
 
 ## Architecture (request flow)
 
 ```
-POST /upload -> saves .dem to controllers/data/uploads/, writes
-                controllers/data/output/<id>/meta.json (original filename),
-                spawns goroutine running ParseDemo()
+POST /upload -> saves .dem to controllers/data/uploads/, inserts the demos
+                row (name, status "parsing"), spawns goroutine running
+                ParseDemo()
 ParseDemo()   -> demoinfocs event handlers accumulate FrameState per round,
-                writes <round>.json + output.json per demo,
-                reports byte-based progress via updateProgress()
+                stores everything in controllers/data/statetrak.db (sqlite):
+                round rows (gzip blob + winner/economy columns + kills)
+                + the demo metadata row, reporting byte-based progress
+                via updateProgress()
 client        -> fetches /demos/:id/output (metadata), /demos/:id/:round
-                (frames), renders on radar images from client/src/maps/
+                (frames — gzipped passthrough), renders on radar images
+                from client/src/maps/
 ```
 
 - `controllers/game.go` — parser, data model (`FrameState`, `Round`, `KillEvent`,
-  `Game`), JSON output. Round JSON contains `frames`, `winner`, `kills`
+  `Game`), store writes: `InsertRounds` stores each round as a gzip blob of
+  its JSON plus derived columns + kills rows, `FinishDemo` stores the game
+  metadata row. The round blob contains `frames`, `winner`, `kills`
   (per-kill attacker/victim/team/weapon/headshot/death-position), and an
   `economy` snapshot per round (per-team buy captured just after freeze-time
   end, with a heuristic pistol/eco/force/hero/kept/half/full baseline classification
@@ -101,7 +107,7 @@ client        -> fetches /demos/:id/output (metadata), /demos/:id/:round
 - `controllers/jev.go` — JEV (TypeSafe System One) client + round-economy
   analyzer, shared by two entry points: the `-jev` CLI flag (prints a
   baseline vs JEV comparison) and `GET /demos/:id/analysis` (runs the same
-  analysis, caches it as `analysis.json` in the demo's output dir so JEV is
+  analysis, caches it in the store (`caches` table) so JEV is
   billed once per demo, single-flighted per demo id). The key is
   bring-your-own: `X-TypeSafe-Key` request header (🔑 client settings) wins,
   `TYPESAFE_API_KEY` env is the fallback; a bad key degrades stickily to
@@ -111,7 +117,7 @@ client        -> fetches /demos/:id/output (metadata), /demos/:id/:round
   positions at plant+5s (spread, distance to bomb), movement +5s→+15s,
   CT retake entry (first CT within 500u of the bomb, how grouped they
   entered) and the outcome (defused/exploded/eliminated); computed from the
-  round JSON files on first request, cached as `postplant.json`. Phantom
+  stored round blobs on first request, cached in the store. Phantom
   plants are detected by the planted-run shape — RoundEnd resets
   `bombState`, so a real plant's `planted:true` run is always followed by
   `planted:false` frames, while a phantom run reaches the round's last
@@ -125,15 +131,30 @@ client        -> fetches /demos/:id/output (metadata), /demos/:id/:round
   post-plant analysis, player sides) and proxies to
   `{baseUrl}/chat/completions`. Keys are per-request only — never logged,
   cached or persisted. Bad LLM key → 502 with the provider's error.
-- `controllers/demo.go` — upload/list/status/delete routes, in-memory
-  `demoStatus` map, `meta.json` persistence, `loadPersistedDemos()` on
-  startup. No package `init()`: `main` calls `controllers.Init()` after
-  flag parsing, so `-data`/`SetDataDir` can relocate the upload/output dirs
-  first (defaults keep `./controllers/data`).
-- `controllers/round.go` — round-serving routes; `/demos/:id/rounds`
-  summaries include each team's roster steam ids (from the round's economy
-  snapshot) so the client knows which side "my" player was on per round
-  (teams swap at halftime).
+- `controllers/demo.go` — upload/list/status/delete routes; `demoStatus` is
+  an in-memory map for live parse progress, seeded from the `demos` table on
+  startup (`loadPersistedDemos()`). `Init()` opens the store, sweeps
+  interrupted parses, imports legacy output trees once. No package
+  `init()`: `main` calls `controllers.Init()` after flag parsing, so
+  `-data`/`SetDataDir` can relocate the upload/output dirs + db path first
+  (defaults keep `./controllers/data`).
+- `controllers/round.go` — round-serving routes; `GET /demos/:id/:round`
+  serves the stored gzip blob directly with `Content-Encoding: gzip` when
+  the client accepts it (browsers + both desktop webviews do), plain JSON
+  otherwise. `/demos/:id/rounds` summaries come from the round columns
+  (winner/buys) — no blob decompression — and include each team's roster
+  steam ids (from the round's economy snapshot) so the client knows which
+  side "my" player was on per round (teams swap at halftime).
+- `controllers/store.go` — sqlite storage (`modernc.org/sqlite`, pure Go —
+  no cgo, cross-builds unaffected; don't swap in mattn/go-sqlite3). Schema
+  v1: `demos` (metadata + status), `rounds` (frame blob + derived columns),
+  `kills`, `caches` (JEV + post-plant results). Frames are stored once per
+  round as a gzip blob of the round JSON — byte-compatible with the
+  pre-sqlite `<round>.json` files (the legacy importer gzips those files
+  verbatim). WAL, per-connection pragmas ride on the DSN,
+  `ImportLegacyOutput()` runs at Init: imports pre-sqlite output/<id>/
+  trees once, skips anything already in the db, and leaves the old trees
+  on disk as backup.
 - `web/web.go` — `go:embed` of `web/dist`: `Dist()` fs for asset servers + SPA fallback route.
 - `server/router.go` — the gin router (API routes + SPA fallback), shared by
   the portable binary (`main.go`) and the Wails desktop app (`desktop/`).
@@ -175,18 +196,21 @@ client        -> fetches /demos/:id/output (metadata), /demos/:id/:round
   Progress is tracked by bytes consumed via the `countingReader` wrapper in
   `game.go` and surfaced as `progress`/`total` (percent) on the status route.
   Don't "simplify" this back to `p.Progress()`.
-- **Route params are used to build file paths** — always go through
-  `demoDir()` / `filepath.Base` (`demo.go`). Never interpolate `c.Param()`
-  directly into a filesystem path.
-- **Status map is in-memory only**; names + done/error state survive restarts
-  solely via `meta.json` + `output.json` presence (see `loadPersistedDemos`).
+- **Route params reach the filesystem** only via `demoDir()` /
+  `UploadPath()` + `filepath.Base` (`demo.go`) — legacy dir cleanup and
+  uploads. Never interpolate `c.Param()` directly into a path.
+- **The `demoStatus` map is live parse progress only**; names + status/error
+  survive restarts via the `demos` table (`loadPersistedDemos` seeds the map
+  from it). A crash mid-parse leaves a `parsing` row that `SweepInterrupted()`
+  flips to `error` on next boot — the kept `.dem` upload allows `-reparse`
+  recovery.
 - **Gin serves static and param siblings** on `/demos/:id/...`
   (`rounds`/`status`/`output` vs `:round`) — this works on current gin, but
   test route changes against the running app; gin panics at startup on bad
   route trees.
 - **Round indexing**: warmup/knife before `MatchStart` is discarded; rounds
-  start at 0 after that. Round files are named by round number, `output.json`
-  is the game-level metadata (excluded from the rounds listing).
+  start at 0 after that. Rounds are rows keyed `(demo_id, round)`; game-level
+  metadata lives on the `demos` row (served as `/output`).
 - **CS2 economy properties are traps** (see `snapshotTeamEconomy`):
   `Player.MoneySpentThisRound()` never resets between rounds, and
   `Player.EquipmentValueFreezetimeEnd()` read inside the `RoundFreezetimeEnd`
@@ -195,11 +219,17 @@ client        -> fetches /demos/:id/output (metadata), /demos/:id/:round
   start money snapshotted on `RoundStart`; spent = start money − bank.
   Pistol rounds are detected via start money ($800), not equipment values
   (which carry warmup leftovers in round 0).
-- `FrameRate` in `output.json` is measured from LIVE-phase frames (~67 for
+- `FrameRate` in the demo metadata row is measured from LIVE-phase frames (~67 for
   CS2 — the header value is unavailable mid-parse). The client derives
   playback timing per round from the frame timestamps, not from this
-  number. A fresh parse (upload or `-reparse`) clears `analysis.json` and
-  `postplant.json` so derived caches never go stale.
+  number. A fresh parse (upload or `-reparse`) clears the round rows +
+  `caches` (`ClearDemoRounds`) so derived analyses never go stale.
+- **Storage is sqlite** (`controllers/data/statetrak.db`, WAL). Losing the
+  db is recoverable: `.dem` uploads are kept and legacy `output/` trees
+  re-import on boot; copying a live db needs its `-wal`/`-shm` sidecars
+  (or a stopped app). Two parses of the same demo are NOT byte-identical —
+  transient lists (smokes/flashes/HEs/grenades) come from Go map iteration —
+  so byte-diff round data only within one parse.
 - **The desktop app is a Wails build in `desktop/`** — same module, its own
   `main` package. It plugs the shared `server.NewRouter()` into Wails'
   asset server (`Assets: web.Dist()`, `Handler: router`): UI assets come

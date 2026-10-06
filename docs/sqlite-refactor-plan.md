@@ -234,10 +234,17 @@ roster-less ancient demo). Remaining decision: when to drop the legacy
 `output/` trees (a `-drop-legacy` flag or manual deletion once the store
 has proven itself).
 
-**Phase 6 — gzip passthrough + docs** — `Content-Encoding: gzip` on
-`/demos/:id/:round` (plain-gunzip fallback kept behind a check), readme +
-AGENTS.md storage sections, regenerate `THIRD_PARTY_NOTICES.md`, release
-as `v0.0.3`.
+**Phase 6 — gzip passthrough + docs** — **DONE**
+`Content-Encoding: gzip` on `/demos/:id/:round` (browser/webview clients
+get the stored blob directly — 30MB → 0.7MB per request; plain-gunzip
+served for clients without Accept-Encoding), readme + AGENTS.md storage
+sections, release notes for v0.0.2/v0.0.3. Notices: no new deps since
+phase 1 — nothing to regenerate. Desktop app rebuilt against the store.
+
+Verified: passthrough bytes == decompressed bytes (same run),
+`curl --compressed` (browser behavior) identical; cross-parse diffs are
+Go map-ordering in transient lists (pre-existing behavior, documented in
+AGENTS.md).
 
 Verification at every phase: `gofmt -l . && go vet ./...`, `make`, parse
 `test.dem` (17 rounds), full curl sweep from AGENTS.md, restart
@@ -267,10 +274,11 @@ persistence, delete, `make desktop` (webview + WAL in-process sanity),
   pre-existing `output/local` dir + a `local` DB row as one demo (overwrite,
   not duplicate).
 
-## Open questions (decide before phase 1)
+## Status: refactor complete (v0.0.3-ready)
 
-1. Keep the legacy dual-write phase 2 at all, or go straight read+write
-   in one phase? (Dual-write is safer for a public app; adds a throwaway flag.)
+All phases done. Ready to tag `v0.0.3` when desired — the plan's open
+question about dropping the legacy `output/` trees remains a manual
+cleanup decision for later.
 2. gzip level: default (fast, ~27:1 measured with python defaults) vs
    `gzip.BestCompression` at parse time (parse is 8s anyway; check the real
    numbers when implementing). — resolved: Go default level, 24.5:1 at

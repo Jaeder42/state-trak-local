@@ -2,17 +2,36 @@ package controllers
 
 import (
 	"strconv"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 )
 
 // GetRound serves one round's frames — the exact JSON the old
-// <round>.json file held, decompressed from the store.
+// <round>.json file held. Clients that accept gzip (every browser and
+// both desktop webviews) get the stored blob passed through untouched
+// with Content-Encoding: gzip — a 30MB round ships as ~0.7MB with zero
+// marshal/decompress work. Anything else gets it decompressed.
 func GetRound(c *gin.Context) {
 	demoId := c.Param("id")
 	round, err := strconv.Atoi(c.Param("round"))
 	if err != nil {
 		c.JSON(404, gin.H{"error": "round not found"})
+		return
+	}
+	if strings.Contains(c.GetHeader("Accept-Encoding"), "gzip") {
+		blob, ok, err := db.GetRoundBlob(demoId, round)
+		if err != nil {
+			c.JSON(500, gin.H{"error": err.Error()})
+			return
+		}
+		if !ok {
+			c.JSON(404, gin.H{"error": "round not found"})
+			return
+		}
+		c.Header("Content-Encoding", "gzip")
+		c.Header("Vary", "Accept-Encoding")
+		c.Data(200, "application/json", blob)
 		return
 	}
 	data, ok, err := db.GetRoundJSON(demoId, round)
