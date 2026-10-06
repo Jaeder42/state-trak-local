@@ -125,19 +125,22 @@ Signing notes:
   Then the dmg opens cleanly on any Mac. Until then, `make dmg` output is
   perfect for yourself and people who trust where it came from.
 
-## Desktop app (Wails) vs browser
+## Desktop app vs portable mode
 
-`make desktop` packages the whole thing as a real desktop app
-(`desktop/build/bin/StateTrak.app` on macOS — window, dock icon, closing it
-quits; `make dmg` also produces `release/StateTrak.dmg`). The app runs the
-same gin API + embedded React UI in-process through Wails' asset server —
-the client keeps using plain `fetch()`, with every non-asset request falling
-through to the gin router. Data goes to `~/Library/Application Support/StateTrak`
-(`-data` overrides) since a Finder-launched app has no usable working dir.
-The window is fullscreenable via the native ⤢ button or **F11** (the same
-shortcut works in browser mode via the Fullscreen API). Toolchain
-requirements live in **Building** above. `STATETRAK_NO_OPEN=1` suppresses
-the browser in portable mode (set in `make run`).
+The same app ships two ways:
+
+| | Desktop app | Portable binary |
+| --- | --- | --- |
+| UI | native window — dock icon, closing it quits | opens in your default browser |
+| Fullscreen | green ⤢ button or **F11** | **F11** (browser fullscreen) |
+| Data | per-user config dir (`~/Library/Application Support/StateTrak` on macOS) | `./controllers/data` next to wherever you run it |
+| Flags | `-data` | `-addr`, `-data`, `STATETRAK_NO_OPEN` (see Configuration) |
+| Distribution | `StateTrak-macos.dmg` / `.exe` / `.tar.gz` — built per OS with Wails | `statetrak-*` binaries — pure Go, cross-compile anywhere |
+
+Both run the exact same gin API + embedded React UI in-process; the
+desktop app plugs the router into Wails' asset server so the client's
+`fetch()` calls work unchanged — implementation notes in
+[AGENTS.md](AGENTS.md).
 
 ## Usage
 
