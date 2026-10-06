@@ -407,6 +407,22 @@ func (c *countingReader) Read(buf []byte) (int, error) {
 }
 
 func ParseDemo(demoId string, filePath string) Game {
+	// Storage bookkeeping first: the upload flow already created the row;
+	// the -parse/-reparse CLI paths create it here (name = id, like the old
+	// meta-less "local" demo). Clearing rounds + caches up front means a
+	// fresh parse never inherits stale derived data — same contract the
+	// analysis.json/postplant.json removals below used to carry.
+	if exists, err := db.DemoExists(demoId); err != nil {
+		log.Panic("failed to look up demo row: ", err)
+	} else if !exists {
+		if err := db.CreateDemo(demoId, demoId); err != nil {
+			log.Panic("failed to create demo row: ", err)
+		}
+	}
+	if err := db.ClearDemoRounds(demoId); err != nil {
+		log.Panic("failed to clear old rounds: ", err)
+	}
+
 	f, err := os.Open(filePath)
 	if err != nil {
 		log.Panic("failed to open demo file: ", err)
@@ -953,6 +969,16 @@ func ParseDemo(demoId string, filePath string) Game {
 		if err := os.WriteFile(roundFile, roundJson, 0644); err != nil {
 			log.Panic("failed to write round file: ", err)
 		}
+	}
+
+	// Dual-write: the same data into sqlite (frames gzipped, derived columns
+	// filled). The read paths still serve the files above; they migrate to
+	// the store next, after which the file writes go away.
+	if err := db.InsertRounds(demoId, game.Rounds); err != nil {
+		log.Panic("failed to store rounds: ", err)
+	}
+	if err := db.FinishDemo(demoId, game); err != nil {
+		log.Panic("failed to finalize demo row: ", err)
 	}
 
 	game.Rounds = nil

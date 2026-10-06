@@ -37,6 +37,12 @@ type Store struct {
 	db *sql.DB
 }
 
+// db is the process-wide store, opened by Init (after SetDataDir had its
+// chance to relocate the data directory). All controllers write through it;
+// during the json->sqlite migration the JSON files are dual-written so the
+// (still file-based) read paths keep working.
+var db *Store
+
 // DemoRow is one entry of the demo listing.
 type DemoRow struct {
 	Id     string

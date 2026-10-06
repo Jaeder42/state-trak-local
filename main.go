@@ -50,6 +50,10 @@ func main() {
 		controllers.SetDataDir(*data)
 	}
 
+	// Init opens the data dirs + sqlite store — every entry point below
+	// (-parse, -reparse, the server) writes parses through the store.
+	controllers.Init()
+
 	if *parse != "" {
 		controllers.ParseDemo("local", *parse)
 		return
@@ -74,7 +78,6 @@ func main() {
 		return
 	}
 
-	controllers.Init()
 	router := server.NewRouter()
 
 	ln, err := net.Listen("tcp", *addr)

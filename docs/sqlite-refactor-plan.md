@@ -189,11 +189,15 @@ interface. First real Go tests in the repo: temp-DB CRUD, delete-cascade,
 migration importer against fixture JSON, WAL concurrent read-during-write
 smoke. No callers yet.
 
-**Phase 2 — write path** (game.go, demo.go)
+**Phase 2 — write path** (game.go, demo.go, main.go) — **DONE**
 `ParseDemo` inserts rounds/rows via one tx; upload flow inserts the
 `demos` row (status `parsing`) and finalizes to `done`/`error`; delete goes
 through the DB. Keep writing JSON files in parallel (dual-write) during this
 phase so the old read path stays intact — flip flag-guarded.
+
+Verified: dual-write byte-identical (blob == round file), upload/delete/
+re-parse flows against the real test.dem, cross-builds still cgo-free
+(windows/linux).
 
 **Phase 3 — read path** (round.go, jev.go, postplant.go, coach.go)
 All readers switch to the store; `/rounds` summaries from columns.

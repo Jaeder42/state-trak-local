@@ -35,6 +35,7 @@ var (
 const (
 	defaultUploadDir = "./controllers/data/uploads"
 	defaultOutputDir = "./controllers/data/output"
+	defaultDataDir   = "./controllers/data"
 
 	defaultUploadMaxBytes = 1 << 30 // 1 GB
 )
@@ -44,22 +45,38 @@ const (
 var (
 	uploadDir = defaultUploadDir
 	outputDir = defaultOutputDir
+	dbFile    = filepath.Join(defaultDataDir, "statetrak.db")
 )
 
-// SetDataDir moves uploads + parse output under one root directory.
+// SetDataDir moves uploads + parse output + the database under one root
+// directory.
 func SetDataDir(dir string) {
 	uploadDir = filepath.Join(dir, "uploads")
 	outputDir = filepath.Join(dir, "output")
+	dbFile = filepath.Join(dir, "statetrak.db")
 }
 
-// Init prepares the data dirs and the persisted demo list. Called from
-// main (after flag parsing) instead of an init() so that -data can take
-// effect first.
+// Init prepares the data dirs, opens the sqlite store and restores the
+// persisted demo list. Called from main (after flag parsing) instead of an
+// init() so that -data can take effect first.
 func Init() {
 	if err := os.MkdirAll(uploadDir, 0755); err != nil {
 		panic(err)
 	}
 	if err := os.MkdirAll(outputDir, 0755); err != nil {
+		panic(err)
+	}
+
+	// Parse-time storage: every entry point (upload, -parse, -reparse)
+	// writes through the store, so it opens before anything can parse.
+	s, err := OpenStore(dbFile)
+	if err != nil {
+		panic(err)
+	}
+	db = s
+	// A "parsing" row left by a crash can never finish — flip it before
+	// anything is served. The .dem upload is kept, so a re-parse recovers.
+	if err := db.SweepInterrupted(); err != nil {
 		panic(err)
 	}
 
@@ -163,6 +180,11 @@ func UploadDemo(c *gin.Context) {
 			os.WriteFile(filepath.Join(demoDir(demoId), "meta.json"), meta, 0644)
 		}
 	}
+	// Storage row for the parse (status "parsing" until ParseDemo finishes).
+	if err := db.CreateDemo(demoId, file.Filename); err != nil {
+		c.JSON(500, gin.H{"error": err.Error()})
+		return
+	}
 
 	demoMu.Lock()
 	demoStatus[demoId] = &DemoStatus{
@@ -179,6 +201,8 @@ func UploadDemo(c *gin.Context) {
 				demoStatus[demoId].Status = "error"
 				demoStatus[demoId].Error = fmt.Sprintf("%v", r)
 				demoMu.Unlock()
+				// Same fate in the database (best effort — the parse is over).
+				_ = db.FailDemo(demoId, fmt.Sprintf("%v", r))
 			}
 		}()
 		parseSem <- struct{}{} // wait for a free parse slot (RAM cap)
@@ -230,6 +254,9 @@ func DeleteDemo(c *gin.Context) {
 	demoMu.Lock()
 	delete(demoStatus, id)
 	demoMu.Unlock()
+
+	// Rounds, kills and caches cascade away with the row.
+	_, _ = db.DeleteDemo(id)
 
 	os.RemoveAll(demoDir(id))
 	os.Remove(filepath.Join(uploadDir, filepath.Base(id)+".dem"))
