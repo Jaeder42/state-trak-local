@@ -21,8 +21,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"os"
-	"path/filepath"
 	"strings"
 	"time"
 
@@ -77,8 +75,10 @@ Plain text, no markdown headings, max ~350 words. Use "you"/"your team" to addre
 // GetCoach runs the BYO-LLM coaching analysis for a demo.
 func GetCoach(c *gin.Context) {
 	id := c.Param("id")
-	dir := demoDir(id)
-	if _, err := os.Stat(filepath.Join(dir, "output.json")); err != nil {
+	if exists, err := db.DemoExists(id); err != nil {
+		c.JSON(500, gin.H{"error": err.Error()})
+		return
+	} else if !exists {
 		c.JSON(404, gin.H{"error": "demo not found"})
 		return
 	}
@@ -100,7 +100,7 @@ func GetCoach(c *gin.Context) {
 		return
 	}
 
-	ctx, err := buildCoachContext(dir, req.SteamId)
+	ctx, err := buildCoachContext(id, req.SteamId)
 	if err != nil {
 		c.JSON(500, gin.H{"error": err.Error()})
 		return
@@ -115,35 +115,37 @@ func GetCoach(c *gin.Context) {
 }
 
 // buildCoachContext assembles the compact demo state for the LLM prompt.
-func buildCoachContext(dir, steamId string) (*coachContext, error) {
-	var out struct {
-		Map     string `json:"map"`
-		Players []struct {
-			Name    *string `json:"name"`
-			SteamID *string `json:"steamId"`
-		} `json:"players"`
+func buildCoachContext(demoId, steamId string) (*coachContext, error) {
+	outData, ok, err := db.GetDemoOutput(demoId)
+	if err != nil {
+		return nil, err
 	}
-	if data, err := os.ReadFile(filepath.Join(dir, "output.json")); err != nil {
+	if !ok {
 		return nil, fmt.Errorf("demo metadata missing")
-	} else if err := json.Unmarshal(data, &out); err != nil {
+	}
+	var out struct {
+		Map     string   `json:"map"`
+		Players []Player `json:"players"`
+	}
+	if err := json.Unmarshal(outData, &out); err != nil {
 		return nil, err
 	}
 
-	summaries, err := loadRoundSummaries(dir)
+	summaries, err := db.GetRoundSummaries(demoId)
 	if err != nil {
 		return nil, err
 	}
 
 	// Post-plant analysis — reuse the cache if present, compute otherwise.
 	var post *PostPlantAnalysis
-	if data, err := os.ReadFile(filepath.Join(dir, "postplant.json")); err == nil {
+	if data, ok, err := db.GetCache(demoId, CachePostPlant); err == nil && ok {
 		_ = json.Unmarshal(data, &post)
 	}
 	if post == nil {
-		if computed, err := computePostPlant(dir); err == nil {
+		if computed, err := computePostPlant(demoId); err == nil {
 			post = computed
 			if data, err := json.Marshal(post); err == nil {
-				_ = os.WriteFile(filepath.Join(dir, "postplant.json"), data, 0644)
+				_ = db.SetCache(demoId, CachePostPlant, data)
 			}
 		}
 	}

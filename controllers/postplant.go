@@ -4,11 +4,6 @@ import (
 	"bytes"
 	"encoding/json"
 	"math"
-	"os"
-	"path/filepath"
-	"sort"
-	"strconv"
-	"strings"
 
 	"github.com/gin-gonic/gin"
 )
@@ -393,37 +388,18 @@ func ppSummarize(rounds []PostPlantRound) PostPlantSummary {
 	return s
 }
 
-// computePostPlant scans a demo's round files for planted rounds and builds
-// the post-plant analysis.
-func computePostPlant(dir string) (*PostPlantAnalysis, error) {
-	entries, err := os.ReadDir(dir)
+// computePostPlant scans a demo's rounds for planted rounds and builds
+// the post-plant analysis from the stored frame blobs.
+func computePostPlant(demoId string) (*PostPlantAnalysis, error) {
+	roundNums, err := db.GetRoundNumbers(demoId)
 	if err != nil {
 		return nil, err
 	}
 
-	// numeric .json round files, sorted by round number (like GetRounds)
-	type roundFile struct {
-		num  int
-		path string
-	}
-	var files []roundFile
-	for _, entry := range entries {
-		name := entry.Name()
-		if !strings.HasSuffix(name, ".json") {
-			continue
-		}
-		num, err := strconv.Atoi(strings.TrimSuffix(name, ".json"))
-		if err != nil {
-			continue // output.json, meta.json, analysis.json, postplant.json…
-		}
-		files = append(files, roundFile{num: num, path: filepath.Join(dir, name)})
-	}
-	sort.Slice(files, func(i, j int) bool { return files[i].num < files[j].num })
-
 	var rounds []PostPlantRound
-	for _, f := range files {
-		data, err := os.ReadFile(f.path)
-		if err != nil {
+	for _, roundNum := range roundNums {
+		data, ok, err := db.GetRoundJSON(demoId, roundNum)
+		if err != nil || !ok {
 			continue
 		}
 		if !bytes.Contains(data, plantedTrueProbe) {
@@ -433,11 +409,11 @@ func computePostPlant(dir string) (*PostPlantAnalysis, error) {
 		if err := json.Unmarshal(data, &rf); err != nil {
 			continue
 		}
-		roundNum := f.num
+		round := roundNum
 		if rf.Round != nil {
-			roundNum = *rf.Round
+			round = *rf.Round
 		}
-		if pr, ok := ppAnalyzeRound(rf, roundNum); ok {
+		if pr, ok := ppAnalyzeRound(rf, round); ok {
 			rounds = append(rounds, *pr)
 		}
 	}
@@ -446,20 +422,28 @@ func computePostPlant(dir string) (*PostPlantAnalysis, error) {
 }
 
 // GetPostPlant serves the post-plant positioning analysis, computing it on
-// first request and caching it as postplant.json in the demo's output dir.
+// first request and caching it in the store (JEV and post-plant are billed
+// once per demo).
 func GetPostPlant(c *gin.Context) {
 	demoId := c.Param("id")
-	dir := demoDir(demoId)
 
-	cacheFile := filepath.Join(dir, "postplant.json")
-	if data, err := os.ReadFile(cacheFile); err == nil {
+	if data, ok, err := db.GetCache(demoId, CachePostPlant); err == nil && ok {
 		c.Data(200, "application/json", data)
 		return
 	}
-
-	analysis, err := computePostPlant(dir)
+	exists, err := db.DemoExists(demoId)
 	if err != nil {
+		c.JSON(500, gin.H{"error": err.Error()})
+		return
+	}
+	if !exists {
 		c.JSON(404, gin.H{"error": "demo not found"})
+		return
+	}
+
+	analysis, err := computePostPlant(demoId)
+	if err != nil {
+		c.JSON(500, gin.H{"error": err.Error()})
 		return
 	}
 
@@ -469,6 +453,6 @@ func GetPostPlant(c *gin.Context) {
 		return
 	}
 	// Best-effort cache — serving without it is fine too.
-	_ = os.WriteFile(cacheFile, data, 0644)
+	_ = db.SetCache(demoId, CachePostPlant, data)
 	c.Data(200, "application/json", data)
 }

@@ -302,6 +302,20 @@ func TestStoreClearRoundsKeepsDemo(t *testing.T) {
 	}
 }
 
+func TestStoreRoundNumbers(t *testing.T) {
+	s := openTestStore(t)
+	// Empty demo: no rounds, no error.
+	s.CreateDemo("1", "a.dem")
+	if nums, err := s.GetRoundNumbers("1"); err != nil || len(nums) != 0 {
+		t.Errorf("empty GetRoundNumbers = %v, err %v", nums, err)
+	}
+	seedDemo(t, s, "2", []Round{fixtureRound(0), fixtureRound(1)})
+	nums, err := s.GetRoundNumbers("2")
+	if err != nil || len(nums) != 2 || nums[0] != 0 || nums[1] != 1 {
+		t.Errorf("GetRoundNumbers = %v, err %v", nums, err)
+	}
+}
+
 func TestStoreCaches(t *testing.T) {
 	s := openTestStore(t)
 	seedDemo(t, s, "123", []Round{fixtureRound(0)})

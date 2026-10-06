@@ -480,6 +480,26 @@ func (s *Store) GetRoundMetas(demoId string) ([]RoundMeta, error) {
 	return metas, rows.Err()
 }
 
+// GetRoundNumbers returns which rounds exist for a demo, ordered — the
+// round list the post-plant scan iterates (it may legitimately not be
+// contiguous for imported legacy demos).
+func (s *Store) GetRoundNumbers(demoId string) ([]int, error) {
+	rows, err := s.db.Query(`SELECT round FROM rounds WHERE demo_id = ? ORDER BY round`, demoId)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var nums []int
+	for rows.Next() {
+		var n int
+		if err := rows.Scan(&n); err != nil {
+			return nil, err
+		}
+		nums = append(nums, n)
+	}
+	return nums, rows.Err()
+}
+
 // GetRoundSummaries builds the /rounds response from the round columns —
 // the old version read every 30MB round file for this.
 func (s *Store) GetRoundSummaries(demoId string) ([]RoundSummary, error) {

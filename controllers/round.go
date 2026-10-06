@@ -1,32 +1,30 @@
 package controllers
 
 import (
-	"encoding/json"
-	"fmt"
-	"os"
-	"path/filepath"
-	"sort"
 	"strconv"
-	"strings"
 
 	"github.com/gin-gonic/gin"
 )
 
-func checkErr(err error) {
-	if err != nil {
-		fmt.Println(err)
-	}
-}
-
+// GetRound serves one round's frames — the exact JSON the old
+// <round>.json file held, decompressed from the store.
 func GetRound(c *gin.Context) {
 	demoId := c.Param("id")
-	round := c.Param("round")
-	filename := filepath.Join(demoDir(demoId), filepath.Base(round)+".json")
-	if _, err := os.Stat(filename); err != nil {
+	round, err := strconv.Atoi(c.Param("round"))
+	if err != nil {
 		c.JSON(404, gin.H{"error": "round not found"})
 		return
 	}
-	c.File(filename)
+	data, ok, err := db.GetRoundJSON(demoId, round)
+	if err != nil {
+		c.JSON(500, gin.H{"error": err.Error()})
+		return
+	}
+	if !ok {
+		c.JSON(404, gin.H{"error": "round not found"})
+		return
+	}
+	c.Data(200, "application/json", data)
 }
 
 type RoundSummary struct {
@@ -42,71 +40,24 @@ type RoundSummary struct {
 	TSteamIds  []string `json:"tSteamIds,omitempty"`
 }
 
+// GetRounds serves the round summaries (winner, buys, rosters). The old
+// version read every full 30MB round file for this; the store keeps it in
+// columns, so this is now a small indexed query.
 func GetRounds(c *gin.Context) {
 	demoId := c.Param("id")
-	summaries, err := loadRoundSummaries(demoDir(demoId))
+	exists, err := db.DemoExists(demoId)
+	if err != nil {
+		c.JSON(500, gin.H{"error": err.Error()})
+		return
+	}
+	if !exists {
+		c.JSON(500, gin.H{"error": "demo not found"})
+		return
+	}
+	summaries, err := db.GetRoundSummaries(demoId)
 	if err != nil {
 		c.JSON(500, gin.H{"error": err.Error()})
 		return
 	}
 	c.JSON(200, summaries)
-}
-
-// loadRoundSummaries builds the round summaries (winner, buys, rosters) from
-// a demo's round files — shared by GET /demos/:id/rounds and the LLM coach
-// context.
-func loadRoundSummaries(dir string) ([]RoundSummary, error) {
-	entries, err := os.ReadDir(dir)
-	if err != nil {
-		return nil, err
-	}
-
-	var summaries []RoundSummary
-	for _, entry := range entries {
-		name := entry.Name()
-		if !strings.HasSuffix(name, ".json") || name == "output.json" {
-			continue
-		}
-		num, err := strconv.Atoi(strings.TrimSuffix(name, ".json"))
-		if err != nil {
-			continue
-		}
-		data, err := os.ReadFile(filepath.Join(dir, name))
-		if err != nil {
-			continue
-		}
-		var round struct {
-			Round   *int          `json:"round"`
-			Winner  string        `json:"winner"`
-			Economy *RoundEconomy `json:"economy"`
-		}
-		if err := json.Unmarshal(data, &round); err != nil {
-			continue
-		}
-		roundNum := num
-		if round.Round != nil {
-			roundNum = *round.Round
-		}
-		summary := RoundSummary{Round: roundNum, Winner: round.Winner}
-		if round.Economy != nil {
-			if round.Economy.CT != nil {
-				summary.CTBuy = round.Economy.CT.Type
-				for _, p := range round.Economy.CT.Players {
-					summary.CTSteamIds = append(summary.CTSteamIds, p.SteamId)
-				}
-			}
-			if round.Economy.T != nil {
-				summary.TBuy = round.Economy.T.Type
-				for _, p := range round.Economy.T.Players {
-					summary.TSteamIds = append(summary.TSteamIds, p.SteamId)
-				}
-			}
-		}
-		summaries = append(summaries, summary)
-	}
-
-	sort.Slice(summaries, func(i, j int) bool {
-		return summaries[i].Round < summaries[j].Round
-	})
-	return summaries, nil
 }

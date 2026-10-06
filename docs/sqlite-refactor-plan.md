@@ -199,20 +199,33 @@ Verified: dual-write byte-identical (blob == round file), upload/delete/
 re-parse flows against the real test.dem, cross-builds still cgo-free
 (windows/linux).
 
-**Phase 3 — read path** (round.go, jev.go, postplant.go, coach.go)
+**Phase 3 — read path** (round.go, jev.go, postplant.go, coach.go) — **DONE**
 All readers switch to the store; `/rounds` summaries from columns.
-Dual-write stops; legacy JSON no longer produced. Byte-diff harness:
-run old and new build against the same demo, `diff` every endpoint's
-response (they must match exactly).
+Byte-diff harness: run old and new build against the same demo, `diff`
+every endpoint's response (they must match exactly).
+
+The legacy importer (was phase 5) was wired into Init here — without it,
+file-only demos would 404 between phases 3 and 4, breaking the
+each-phase-must-be-green rule. It ran on first boot and imported the
+pre-existing ancient demo (~20s, one-time). Dual-write stays on until
+phase 4 flips listing/status, so every commit remains green.
+
+Verified byte-identical (old build vs store build): /ping, /demos,
+/demos/:id/status, /output, /rounds, three 30MB round payloads,
+/postplant, and every error path (404s, coach 404) — plus the *imported*
+legacy demo (importer serves the raw file bytes, no re-marshal).
+`/rounds` latency: **1.35s → 11ms**.
 
 **Phase 4 — status & listing** (demo.go, main.go)
 `ListDemos`/`loadPersistedDemos` equivalents from the DB; startup
 `parsing`→`error` sweep; remove `meta.json` machinery. Update `-parse`
 help text ("writes to the database").
 
-**Phase 5 — migration importer** — as described above; verify against the
-pre-existing `controllers/data/output` demos (incl. the old ancient demo
-with no rosters — economy-less rounds must import fine).
+**Phase 5 — migration importer** — **DONE, absorbed into phase 3**
+Imported on first boot against the pre-existing demos (including the
+roster-less ancient demo). Remaining decision: when to drop the legacy
+`output/` trees (a `-drop-legacy` flag or manual deletion once the store
+has proven itself).
 
 **Phase 6 — gzip passthrough + docs** — `Content-Encoding: gzip` on
 `/demos/:id/:round` (plain-gunzip fallback kept behind a check), readme +

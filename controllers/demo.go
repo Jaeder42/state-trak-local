@@ -79,6 +79,14 @@ func Init() {
 	if err := db.SweepInterrupted(); err != nil {
 		panic(err)
 	}
+	// One-shot migration: bring demos parsed by pre-sqlite builds (the old
+	// per-demo output/<id>/ trees) into the store. Already-imported demos
+	// are skipped, so this is cheap after the first boot.
+	if n, err := db.ImportLegacyOutput(outputDir); err != nil {
+		panic(err)
+	} else if n > 0 {
+		fmt.Println("imported", n, "legacy demo(s) into the sqlite store")
+	}
 
 	concurrency := 1
 	if v := os.Getenv("PARSE_CONCURRENCY"); v != "" {
@@ -236,12 +244,16 @@ func GetDemoStatus(c *gin.Context) {
 }
 
 func GetOutput(c *gin.Context) {
-	filename := filepath.Join(demoDir(c.Param("id")), "output.json")
-	if _, err := os.Stat(filename); err != nil {
+	data, ok, err := db.GetDemoOutput(c.Param("id"))
+	if err != nil {
+		c.JSON(500, gin.H{"error": err.Error()})
+		return
+	}
+	if !ok {
 		c.JSON(404, gin.H{"error": "demo not found"})
 		return
 	}
-	c.File(filename)
+	c.Data(200, "application/json", data)
 }
 
 func DeleteDemo(c *gin.Context) {

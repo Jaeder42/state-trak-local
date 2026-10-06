@@ -26,8 +26,6 @@ import (
 	"io"
 	"net/http"
 	"os"
-	"path/filepath"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -285,9 +283,11 @@ type Analysis struct {
 // the JEV question batch. Shared by the CLI (-jev) and the /analysis route.
 // Returns the JSON-ready Analysis plus per-round detail (states) for the CLI.
 func analyzeDemoRounds(demoId, key string) (*Analysis, []jevReport, error) {
-	dir := demoDir(demoId)
-	outData, err := os.ReadFile(filepath.Join(dir, "output.json"))
+	outData, ok, err := db.GetDemoOutput(demoId)
 	if err != nil {
+		return nil, nil, err
+	}
+	if !ok {
 		return nil, nil, fmt.Errorf("demo %q not found (parse it first)", demoId)
 	}
 	var out struct {
@@ -295,23 +295,20 @@ func analyzeDemoRounds(demoId, key string) (*Analysis, []jevReport, error) {
 		RoundCount int    `json:"roundCount"`
 	}
 	if err := json.Unmarshal(outData, &out); err != nil {
-		return nil, nil, fmt.Errorf("bad output.json: %w", err)
+		return nil, nil, fmt.Errorf("bad output data: %w", err)
 	}
 
+	// Winner + economy per round from the store columns — no frame blobs.
+	metas, err := db.GetRoundMetas(demoId)
+	if err != nil {
+		return nil, nil, err
+	}
 	var rounds []slimRound
-	for n := 0; n < out.RoundCount; n++ {
-		data, err := os.ReadFile(filepath.Join(dir, strconv.Itoa(n)+".json"))
-		if err != nil {
-			break
-		}
-		var r slimRound
-		if err := json.Unmarshal(data, &r); err != nil {
-			continue
-		}
-		rounds = append(rounds, r)
+	for _, m := range metas {
+		rounds = append(rounds, slimRound{Winner: m.Winner, Economy: m.Economy})
 	}
 	if len(rounds) == 0 {
-		return nil, nil, fmt.Errorf("no round files found for demo %q", demoId)
+		return nil, nil, fmt.Errorf("no rounds found for demo %q", demoId)
 	}
 	withEconomy := 0
 	for _, r := range rounds {
@@ -524,14 +521,12 @@ var analysisInflight sync.Map // demoId -> chan struct{}
 // request header wins, TYPESAFE_API_KEY is the env fallback.
 func GetAnalysis(c *gin.Context) {
 	id := c.Param("id")
-	dir := demoDir(id)
-	cache := filepath.Join(dir, "analysis.json")
 
-	if data, err := os.ReadFile(cache); err == nil {
+	if data, ok, err := db.GetCache(id, CacheAnalysis); err == nil && ok {
 		c.Data(200, "application/json", data)
 		return
 	}
-	if _, err := os.Stat(filepath.Join(dir, "output.json")); err != nil {
+	if _, ok, _ := db.GetDemoOutput(id); !ok {
 		c.JSON(404, gin.H{"error": "demo not found"})
 		return
 	}
@@ -550,7 +545,7 @@ func GetAnalysis(c *gin.Context) {
 		// Another request is already running the analysis — wait for it,
 		// then serve the cache it wrote.
 		<-ch
-		if data, err := os.ReadFile(cache); err == nil {
+		if data, ok, err := db.GetCache(id, CacheAnalysis); err == nil && ok {
 			c.Data(200, "application/json", data)
 			return
 		}
@@ -568,7 +563,8 @@ func GetAnalysis(c *gin.Context) {
 		return
 	}
 	if data, err := json.Marshal(analysis); err == nil {
-		os.WriteFile(cache, data, 0644)
+		// Best-effort cache — JEV is billed once per demo.
+		_ = db.SetCache(id, CacheAnalysis, data)
 	}
 	c.JSON(200, analysis)
 }
