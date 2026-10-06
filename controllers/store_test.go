@@ -383,6 +383,34 @@ func TestStoreListOrder(t *testing.T) {
 	}
 }
 
+// TestLoadPersistedDemos verifies the startup status-map seeding from the
+// store (what used to be the output-dir scan + meta.json read).
+func TestLoadPersistedDemos(t *testing.T) {
+	saveDB := db
+	defer func() { db = saveDB }()
+	s := openTestStore(t)
+	db = s
+
+	seedDemo(t, s, "111", []Round{fixtureRound(0)})
+	s.CreateDemo("222", "failed.dem")
+	s.FailDemo("222", "boom")
+
+	demoStatus = map[string]*DemoStatus{}
+	loadPersistedDemos()
+
+	if len(demoStatus) != 2 {
+		t.Fatalf("map has %d demos, want 2", len(demoStatus))
+	}
+	done := demoStatus["111"]
+	if done.Name != "test.dem" || done.Status != "done" || done.Progress != 100 || done.Total != 100 {
+		t.Errorf("done demo = %+v", done)
+	}
+	failed := demoStatus["222"]
+	if failed.Status != "error" || failed.Error != "boom" || failed.Progress != 0 || failed.Total != 0 {
+		t.Errorf("failed demo = %+v", failed)
+	}
+}
+
 // TestStoreConcurrentReadDuringWrite is the WAL smoke test: readers must
 // keep working (on pre-commit data) while a big insert transaction runs.
 func TestStoreConcurrentReadDuringWrite(t *testing.T) {

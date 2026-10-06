@@ -1,7 +1,6 @@
 package controllers
 
 import (
-	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -111,36 +110,26 @@ func UploadPath(id string) string {
 	return filepath.Join(uploadDir, filepath.Base(id)+".dem")
 }
 
-// demoMeta is persisted next to the parse output so demo names survive restarts.
+// demoMeta is the old meta.json shape — still read by the legacy importer
+// (store.go) to recover original filenames from pre-sqlite demo trees.
 type demoMeta struct {
 	Name string `json:"name"`
 }
 
-// loadPersistedDemos restores the status of previously parsed demos on startup.
+// loadPersistedDemos restores the status of previously parsed demos on
+// startup — the store is the persistence now (uploaded names, final status
+// and parse errors all live in the demos table).
 func loadPersistedDemos() {
-	entries, err := os.ReadDir(outputDir)
+	rows, err := db.ListDemos()
 	if err != nil {
-		return
+		panic(err)
 	}
-	for _, entry := range entries {
-		if !entry.IsDir() {
-			continue
+	for _, d := range rows {
+		s := &DemoStatus{Id: d.Id, Name: d.Name, Status: d.Status, Error: d.Error}
+		if d.Status == "done" {
+			s.Progress, s.Total = 100, 100
 		}
-		id := entry.Name()
-		s := &DemoStatus{Id: id, Name: id, Status: "done", Progress: 100, Total: 100}
-		if data, err := os.ReadFile(filepath.Join(demoDir(id), "meta.json")); err == nil {
-			var meta demoMeta
-			if json.Unmarshal(data, &meta) == nil && meta.Name != "" {
-				s.Name = meta.Name
-			}
-		}
-		if _, err := os.Stat(filepath.Join(demoDir(id), "output.json")); err != nil {
-			s.Status = "error"
-			s.Error = "parsing incomplete (output.json missing)"
-			s.Progress = 0
-			s.Total = 0
-		}
-		demoStatus[id] = s
+		demoStatus[d.Id] = s
 	}
 }
 
@@ -182,13 +171,8 @@ func UploadDemo(c *gin.Context) {
 		return
 	}
 
-	// Persist the original filename so the demo list survives restarts.
-	if err := os.MkdirAll(demoDir(demoId), 0755); err == nil {
-		if meta, err := json.Marshal(demoMeta{Name: file.Filename}); err == nil {
-			os.WriteFile(filepath.Join(demoDir(demoId), "meta.json"), meta, 0644)
-		}
-	}
 	// Storage row for the parse (status "parsing" until ParseDemo finishes).
+	// The original filename lives in the row — the store is the persistence.
 	if err := db.CreateDemo(demoId, file.Filename); err != nil {
 		c.JSON(500, gin.H{"error": err.Error()})
 		return
@@ -277,34 +261,17 @@ func DeleteDemo(c *gin.Context) {
 }
 
 func ListDemos(c *gin.Context) {
-	entries, err := os.ReadDir(outputDir)
-	if err != nil {
-		c.JSON(500, gin.H{"error": err.Error()})
-		return
-	}
-
 	type DemoInfo struct {
 		Id     string `json:"id"`
 		Name   string `json:"name"`
 		Status string `json:"status"`
 	}
 	demos := []DemoInfo{}
-	for _, e := range entries {
-		if !e.IsDir() {
-			continue
-		}
-		id := e.Name()
-		demoMu.Lock()
-		s := demoStatus[id]
-		demoMu.Unlock()
-		name := id
-		status := "done"
-		if s != nil {
-			name = s.Name
-			status = s.Status
-		}
-		demos = append(demos, DemoInfo{Id: id, Name: name, Status: status})
+	demoMu.Lock()
+	for _, s := range demoStatus {
+		demos = append(demos, DemoInfo{Id: s.Id, Name: s.Name, Status: s.Status})
 	}
+	demoMu.Unlock()
 	sort.Slice(demos, func(i, j int) bool { return demos[i].Id > demos[j].Id })
 	c.JSON(200, demos)
 }

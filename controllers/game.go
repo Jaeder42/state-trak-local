@@ -1,13 +1,11 @@
 package controllers
 
 import (
-	"encoding/json"
 	"fmt"
 	"io"
 	"log"
 	"math"
 	"os"
-	"path/filepath"
 	"sort"
 	"strconv"
 	"unicode"
@@ -951,43 +949,22 @@ func ParseDemo(demoId string, filePath string) Game {
 		RoundCount:     len(rounds),
 	}
 	fmt.Println("Parsed game, frame rate:", frameRate)
-	outDir := filepath.Join(outputDir, demoId)
-	if err := os.MkdirAll(outDir, 0755); err != nil {
-		log.Panic("failed to create output dir: ", err)
-	}
-	// Derived analyses are cached next to the round files — a fresh parse
-	// invalidates them (also covers a re-parse with newer parser code).
-	_ = os.Remove(filepath.Join(outDir, "analysis.json"))
-	_ = os.Remove(filepath.Join(outDir, "postplant.json"))
-	for i, round := range game.Rounds {
+	// Any legacy JSON tree for this demo is now stale (the store is the
+	// only read path) — drop it so a deleted-database recovery can never
+	// resurrect old output. Non-legacy demos simply have no directory.
+	_ = os.RemoveAll(demoDir(demoId))
+	for i := range game.Rounds {
 		fmt.Println("round", i+1, "/", len(game.Rounds))
-		roundJson, err := json.Marshal(round)
-		if err != nil {
-			log.Panic("failed to marshal round: ", err)
-		}
-		roundFile := filepath.Join(outDir, strconv.Itoa(*round.Round)+".json")
-		if err := os.WriteFile(roundFile, roundJson, 0644); err != nil {
-			log.Panic("failed to write round file: ", err)
-		}
 	}
 
-	// Dual-write: the same data into sqlite (frames gzipped, derived columns
-	// filled). The read paths still serve the files above; they migrate to
-	// the store next, after which the file writes go away.
+	// The parse result: rounds (frame blobs + derived columns + kills) and
+	// the demo metadata row, all in one go. Derived analyses (JEV,
+	// post-plant) were cleared with the old rounds above.
 	if err := db.InsertRounds(demoId, game.Rounds); err != nil {
 		log.Panic("failed to store rounds: ", err)
 	}
 	if err := db.FinishDemo(demoId, game); err != nil {
 		log.Panic("failed to finalize demo row: ", err)
-	}
-
-	game.Rounds = nil
-	jsonObj, err := json.Marshal(game)
-	if err != nil {
-		log.Panic("failed to marshal game: ", err)
-	}
-	if err := os.WriteFile(filepath.Join(outDir, "output.json"), jsonObj, 0644); err != nil {
-		log.Panic("failed to write output file: ", err)
 	}
 	return game
 }

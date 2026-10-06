@@ -216,10 +216,17 @@ Verified byte-identical (old build vs store build): /ping, /demos,
 legacy demo (importer serves the raw file bytes, no re-marshal).
 `/rounds` latency: **1.35s → 11ms**.
 
-**Phase 4 — status & listing** (demo.go, main.go)
+**Phase 4 — status & listing** (demo.go, main.go) — **DONE**
 `ListDemos`/`loadPersistedDemos` equivalents from the DB; startup
 `parsing`→`error` sweep; remove `meta.json` machinery. Update `-parse`
 help text ("writes to the database").
+
+Also ended here: the dual-write (no more round files, output.json,
+meta.json), and re-parses now delete the demo's stale legacy tree so a
+lost-database recovery can never resurrect old output. Verified: /demos
+and /status byte-identical to the phase-3 captures, upload lifecycle
+(progress ticks → done → restart persistence → reparse → delete cascade)
+with zero files under output/ for new demos.
 
 **Phase 5 — migration importer** — **DONE, absorbed into phase 3**
 Imported on first boot against the pre-existing demos (including the

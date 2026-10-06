@@ -39,7 +39,7 @@ func main() {
 	// Real environment variables take precedence.
 	_ = godotenv.Load()
 
-	parse := flag.String("parse", "", "parse the given .dem file and exit (writes JSON to controllers/data/output/local)")
+	parse := flag.String("parse", "", "parse the given .dem file into the store (demo id \"local\") and exit")
 	reparse := flag.String("reparse", "", "re-parse a previously uploaded demo's stored .dem and refresh its output (argument is a demo id)")
 	jev := flag.String("jev", "", "analyze a parsed demo's round economies with JEV (eco/force/full detection); argument is a demo id, e.g. -jev=local")
 	addr := flag.String("addr", ":3007", "listen address")
